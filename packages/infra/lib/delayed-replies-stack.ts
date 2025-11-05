@@ -151,22 +151,43 @@ export class DelayedRepliesStack extends Stack {
     this.companyInfoFunction = new lambdaNodejs.NodejsFunction(this, "CompanyInfoFunction", {
       ...commonLambdaProps,
       entry: path.join(__dirname, "../../runtime/src/services/company-info-service.ts"),
-      handler: "handler",
-      functionName: `${id}-company-info-service`
+      handler: "handler", // This will be provided by getApiMethodHandlers
+      functionName: `${id}-company-info-service`,
+      bundling: {
+        ...commonLambdaProps.bundling,
+        externalModules: [
+          "@aws-sdk/client-dynamodb",
+          "@aws-sdk/lib-dynamodb"
+        ]
+      }
     });
 
     this.personasFunction = new lambdaNodejs.NodejsFunction(this, "PersonasFunction", {
       ...commonLambdaProps,
       entry: path.join(__dirname, "../../runtime/src/services/personas-service.ts"),
-      handler: "handler",
-      functionName: `${id}-personas-service`
+      handler: "handler", // This will be provided by getApiMethodHandlers
+      functionName: `${id}-personas-service`,
+      bundling: {
+        ...commonLambdaProps.bundling,
+        externalModules: [
+          "@aws-sdk/client-dynamodb",
+          "@aws-sdk/lib-dynamodb"
+        ]
+      }
     });
 
     this.companyPersonaFunction = new lambdaNodejs.NodejsFunction(this, "CompanyPersonaFunction", {
       ...commonLambdaProps,
       entry: path.join(__dirname, "../../runtime/src/services/company-persona-service.ts"),
-      handler: "handler",
-      functionName: `${id}-company-persona-service`
+      handler: "handler", // This will be provided by getApiMethodHandlers
+      functionName: `${id}-company-persona-service`,
+      bundling: {
+        ...commonLambdaProps.bundling,
+        externalModules: [
+          "@aws-sdk/client-dynamodb",
+          "@aws-sdk/lib-dynamodb"
+        ]
+      }
     });
 
     // Grant DynamoDB permissions to Management API functions

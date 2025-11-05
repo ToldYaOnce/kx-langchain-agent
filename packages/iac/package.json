@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-langchain-agent-iac",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "CDK constructs and stacks for KxGen LangChain agent",
   "type": "module",
   "main": "./dist/index.js",

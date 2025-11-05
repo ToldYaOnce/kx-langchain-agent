@@ -173,7 +173,8 @@ delayedReplies.grantApiGatewayInvoke(yourApiGateway.restApiArn);
 // GET /company-persona/{tenantId}/{personaId} - Get combined config
 ```
 
-📚 **[Complete Integration Guide →](./CONSUMER_INTEGRATION_GUIDE.md)**
+📚 **[Complete Integration Guide →](./CONSUMER_INTEGRATION_GUIDE.md)**  
+🔧 **[Management API Bootstrap →](./MANAGEMENT_API_BOOTSTRAP_GUIDE.md)**
 
 ## 🚀 Deployment
 

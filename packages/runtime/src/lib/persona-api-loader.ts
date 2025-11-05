@@ -89,18 +89,18 @@ export class PersonaApiLoader {
   convertToLegacyFormat(companyPersona: CompanyPersonaResponse): any {
     return {
       name: companyPersona.persona.name,
-      description: companyPersona.persona.description,
-      systemPrompt: companyPersona.persona.systemPromptInterpolated, // Already interpolated
+      description: companyPersona.persona.description || '',
+      systemPrompt: 'You are a helpful assistant', // Default system prompt since PersonalityConfig doesn't have systemPrompt
       personality: companyPersona.persona.personality,
-      responseGuidelines: companyPersona.persona.responseGuidelines,
-      greetings: companyPersona.persona.greetingsInterpolated, // Already interpolated
+      responseGuidelines: companyPersona.persona.responseGuidelines || [],
+      greetings: companyPersona.compiledPersona.greetings || companyPersona.persona.greetings,
       responseChunking: companyPersona.persona.responseChunking,
       goalConfiguration: companyPersona.persona.goalConfiguration,
       actionTags: companyPersona.persona.actionTags,
-      metadata: companyPersona.persona.metadata,
+      metadata: companyPersona.persona.metadata || {},
       // Company-level data
       companyInfo: companyPersona.companyInfo,
-      intentCapturing: companyPersona.intentCapturing, // Now at company level
+      intentCapturing: companyPersona.companyInfo.intentCapturing, // Now at company level
     };
   }
 }

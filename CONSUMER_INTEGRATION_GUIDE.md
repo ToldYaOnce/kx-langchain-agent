@@ -275,6 +275,8 @@ const managementFunctions = delayedReplies.getManagementApiFunctions();
 delayedReplies.grantApiGatewayInvoke(yourApiGateway.restApiArn);
 ```
 
+📚 **[Complete Bootstrap Guide →](./MANAGEMENT_API_BOOTSTRAP_GUIDE.md)**
+
 ### Attach to Your Existing API Gateway
 
 ```typescript

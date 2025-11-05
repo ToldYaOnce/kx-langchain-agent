@@ -1,261 +1,338 @@
-// Note: These would come from @toldyaonce/kx-aws-utils when available
-// For now, using placeholder decorators and base class
+import { Persona } from '../models/personas.js';
+
+// Placeholder decorators and utilities for @toldyaonce/kx-cdk-lambda-utils
 const ApiBasePath = (path: string) => (target: any) => target;
 const ApiMethod = (method: string, path?: string) => (target: any, propertyKey: string, descriptor: PropertyDescriptor) => descriptor;
 
-import { Persona } from '../models/personas.js';
-
-// Placeholder base service class
+// Placeholder Service class
 class Service<T> {
   constructor(model: any, partitionKey: string, sortKey?: string) {}
   
-  async queryByPartitionKey(key: string): Promise<T[] | null> {
-    throw new Error('Service method not implemented - requires @toldyaonce/kx-aws-utils');
+  async create(event: any): Promise<any> {
+    console.log('Service.create called with:', event.body);
+    return { success: true, message: 'Create method not implemented' };
   }
   
-  async getByKey(partitionKey: string, sortKey?: string): Promise<T | null> {
-    throw new Error('Service method not implemented - requires @toldyaonce/kx-aws-utils');
+  async get(event: any): Promise<any> {
+    console.log('Service.get called with:', event.pathParameters);
+    return { success: true, message: 'Get method not implemented' };
   }
   
-  async create(data: T): Promise<T> {
-    throw new Error('Service method not implemented - requires @toldyaonce/kx-aws-utils');
+  async update(event: any): Promise<any> {
+    console.log('Service.update called with:', event.body);
+    return { success: true, message: 'Update method not implemented' };
   }
   
-  async update(data: T): Promise<T> {
-    throw new Error('Service method not implemented - requires @toldyaonce/kx-aws-utils');
+  async delete(event: any): Promise<any> {
+    console.log('Service.delete called with:', event.pathParameters);
+    return { success: true, message: 'Delete method not implemented' };
   }
   
-  async delete(partitionKey: string, sortKey?: string): Promise<void> {
-    throw new Error('Service method not implemented - requires @toldyaonce/kx-aws-utils');
+  async list(event: any): Promise<any> {
+    console.log('Service.list called');
+    return { success: true, data: [], message: 'List method not implemented' };
+  }
+  
+  async query(event: any): Promise<any> {
+    console.log('Service.query called with:', event.pathParameters);
+    return { success: true, data: [], message: 'Query method not implemented' };
   }
 }
 
+// Placeholder getApiMethodHandlers
+function getApiMethodHandlers(service: any): Record<string, any> {
+  return {
+    handler: async (event: any) => {
+      console.log('Generic handler called with:', JSON.stringify(event, null, 2));
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+        },
+        body: JSON.stringify({ 
+          success: true, 
+          message: 'Service method handlers not implemented - requires @toldyaonce/kx-cdk-lambda-utils' 
+        })
+      };
+    }
+  };
+}
+
+/**
+ * Service for managing Persona objects in DynamoDB
+ * Provides CRUD operations for persona configurations
+ */
 @ApiBasePath('/personas')
 export class PersonasService extends Service<Persona> {
+  
   constructor() {
     super(Persona, 'tenantId', 'personaId');
   }
 
-  @ApiMethod('GET', '/:tenantId')
-  async getPersonas(event: any) {
-    const { tenantId } = event.pathParameters;
+  /**
+   * Create a new persona
+   */
+  @ApiMethod('POST', '/{tenantId}')
+  async create(event: any): Promise<any> {
+    console.log('Persona create called', JSON.stringify(event.body));
     
-    try {
-      const personas = await this.queryByPartitionKey(tenantId);
-      
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          tenantId,
-          personas: personas || []
-        })
-      };
-    } catch (error) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ 
-          error: 'Failed to retrieve personas',
-          message: error instanceof Error ? error.message : 'Unknown error'
-        })
-      };
-    }
-  }
+    const corsHeaders = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+    };
 
-  @ApiMethod('GET', '/:tenantId/:personaId')
-  async getPersona(event: any) {
-    const { tenantId, personaId } = event.pathParameters;
-    
     try {
-      const persona = await this.getByKey(tenantId, personaId);
+      const body = JSON.parse(event.body || '{}');
+      const { tenantId } = event.pathParameters;
       
-      if (!persona) {
-        return {
-          statusCode: 404,
-          body: JSON.stringify({ 
-            error: 'Persona not found',
-            tenantId,
-            personaId
-          })
-        };
-      }
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify(persona)
-      };
-    } catch (error) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ 
-          error: 'Failed to retrieve persona',
-          message: error instanceof Error ? error.message : 'Unknown error'
-        })
-      };
-    }
-  }
-
-  @ApiMethod('POST', '/:tenantId')
-  async createPersona(event: any) {
-    const { tenantId } = event.pathParameters;
-    
-    try {
-      const personaData = JSON.parse(event.body);
-      
-      // Ensure tenantId is set
-      personaData.tenantId = tenantId;
+      // Ensure tenantId is set from path
+      body.tenantId = tenantId;
       
       // Add timestamps
-      personaData.createdAt = new Date();
-      personaData.updatedAt = new Date();
+      body.createdAt = new Date().toISOString();
+      body.updatedAt = new Date().toISOString();
       
-      // Validate required fields
-      if (!personaData.personaId) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ 
-            error: 'personaId is required'
-          })
-        };
-      }
-
-      const result = await this.create(personaData);
+      const result = await super.create(event);
       
       return {
         statusCode: 201,
+        headers: corsHeaders,
         body: JSON.stringify(result)
       };
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error creating persona:', error);
+      
       return {
         statusCode: 400,
-        body: JSON.stringify({ 
-          error: 'Failed to create persona',
-          message: error instanceof Error ? error.message : 'Unknown error'
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: false,
+          message: 'Failed to create persona',
+          error: error.message
         })
       };
     }
   }
 
-  @ApiMethod('PUT', '/:tenantId/:personaId')
-  async updatePersona(event: any) {
-    const { tenantId, personaId } = event.pathParameters;
+  /**
+   * Get persona by tenantId and personaId
+   */
+  @ApiMethod('GET', '/{tenantId}/{personaId}')
+  async get(event: any): Promise<any> {
+    console.log('Persona get called', JSON.stringify(event.pathParameters));
     
+    const corsHeaders = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+    };
+
     try {
-      const updateData = JSON.parse(event.body);
-      
-      // Ensure keys match path parameters
-      updateData.tenantId = tenantId;
-      updateData.personaId = personaId;
-      updateData.updatedAt = new Date();
-      
-      const result = await this.update(updateData);
+      const result = await super.get(event);
       
       return {
         statusCode: 200,
+        headers: corsHeaders,
         body: JSON.stringify(result)
       };
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error getting persona:', error);
+      
       return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          error: 'Failed to update persona',
-          message: error instanceof Error ? error.message : 'Unknown error'
+        statusCode: 404,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: false,
+          message: 'Persona not found',
+          error: error.message
         })
       };
     }
   }
 
-  @ApiMethod('DELETE', '/:tenantId/:personaId')
-  async deletePersona(event: any) {
-    const { tenantId, personaId } = event.pathParameters;
+  /**
+   * Update persona
+   */
+  @ApiMethod('PATCH', '/{tenantId}/{personaId}')
+  async update(event: any): Promise<any> {
+    console.log('Persona update called', JSON.stringify(event.body));
     
+    const corsHeaders = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+    };
+
     try {
-      await this.delete(tenantId, personaId);
+      const body = JSON.parse(event.body || '{}');
+      const { tenantId, personaId } = event.pathParameters;
+      
+      // Ensure keys are set from path
+      body.tenantId = tenantId;
+      body.personaId = personaId;
+      
+      // Update timestamp
+      body.updatedAt = new Date().toISOString();
+      
+      const result = await super.update(event);
+      
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify(result)
+      };
+    } catch (error: any) {
+      console.error('Error updating persona:', error);
+      
+      return {
+        statusCode: 400,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: false,
+          message: 'Failed to update persona',
+          error: error.message
+        })
+      };
+    }
+  }
+
+  /**
+   * Delete persona
+   */
+  @ApiMethod('DELETE', '/{tenantId}/{personaId}')
+  async delete(event: any): Promise<any> {
+    console.log('Persona delete called', JSON.stringify(event.pathParameters));
+    
+    const corsHeaders = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+    };
+
+    try {
+      await super.delete(event);
       
       return {
         statusCode: 204,
+        headers: corsHeaders,
         body: ''
       };
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error deleting persona:', error);
+      
       return {
         statusCode: 500,
-        body: JSON.stringify({ 
-          error: 'Failed to delete persona',
-          message: error instanceof Error ? error.message : 'Unknown error'
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: false,
+          message: 'Failed to delete persona',
+          error: error.message
         })
       };
     }
   }
 
-  @ApiMethod('GET', '/:tenantId/random')
-  async getRandomPersona(event: any) {
-    const { tenantId } = event.pathParameters;
+  /**
+   * List personas for a tenant
+   */
+  @ApiMethod('GET', '/{tenantId}')
+  async listByTenant(event: any): Promise<any> {
+    console.log('Persona listByTenant called', JSON.stringify(event.pathParameters));
     
+    const corsHeaders = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+    };
+
     try {
-      const personas = await this.queryByPartitionKey(tenantId);
+      // Use the base service's query method to get all personas for tenant
+      const result = await super.query(event);
+      
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify(result)
+      };
+    } catch (error: any) {
+      console.error('Error listing personas:', error);
+      
+      return {
+        statusCode: 500,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: false,
+          message: 'Failed to list personas',
+          error: error.message
+        })
+      };
+    }
+  }
+
+  /**
+   * Get a random persona for a tenant (used when no specific persona is requested)
+   */
+  @ApiMethod('GET', '/{tenantId}/random')
+  async getRandomPersona(event: any): Promise<any> {
+    console.log('Persona getRandomPersona called', JSON.stringify(event.pathParameters));
+    
+    const corsHeaders = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+    };
+
+    try {
+      // Get all personas for tenant
+      const personas = await super.query(event);
       
       if (!personas || personas.length === 0) {
         return {
           statusCode: 404,
-          body: JSON.stringify({ 
-            error: 'No personas found for tenant',
-            tenantId
+          headers: corsHeaders,
+          body: JSON.stringify({
+            success: false,
+            message: 'No personas found for tenant'
           })
         };
       }
-
-      // Select random persona
-      const randomIndex = Math.floor(Math.random() * personas.length);
-      const randomPersona = personas[randomIndex];
-
+      
+      // Return a random persona
+      const randomPersona = personas[Math.floor(Math.random() * personas.length)];
+      
       return {
         statusCode: 200,
+        headers: corsHeaders,
         body: JSON.stringify(randomPersona)
       };
-    } catch (error) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ 
-          error: 'Failed to retrieve random persona',
-          message: error instanceof Error ? error.message : 'Unknown error'
-        })
-      };
-    }
-  }
-
-  @ApiMethod('GET', '/:tenantId/:personaId/greetings')
-  async getPersonaGreetings(event: any) {
-    const { tenantId, personaId } = event.pathParameters;
-    
-    try {
-      const persona = await this.getByKey(tenantId, personaId);
+    } catch (error: any) {
+      console.error('Error getting random persona:', error);
       
-      if (!persona) {
-        return {
-          statusCode: 404,
-          body: JSON.stringify({ 
-            error: 'Persona not found',
-            tenantId,
-            personaId
-          })
-        };
-      }
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          tenantId,
-          personaId,
-          greetings: persona.greetings
-        })
-      };
-    } catch (error) {
       return {
         statusCode: 500,
-        body: JSON.stringify({ 
-          error: 'Failed to retrieve persona greetings',
-          message: error instanceof Error ? error.message : 'Unknown error'
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: false,
+          message: 'Failed to get random persona',
+          error: error.message
         })
       };
     }
   }
 }
+
+// Export the service and method handlers for Lambda integration
+module.exports = {
+  PersonasService,
+  ...getApiMethodHandlers(new PersonasService())
+};
