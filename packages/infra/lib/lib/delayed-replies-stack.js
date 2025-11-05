@@ -4,10 +4,17 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as sources from "aws-cdk-lib/aws-lambda-event-sources";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import { RemovalPolicy } from "aws-cdk-lib";
 import * as path from "path";
 export class DelayedRepliesStack extends Stack {
     releaseQueue;
     releaseRouterFunction;
+    companyInfoTable;
+    personasTable;
+    companyInfoFunction;
+    personasFunction;
+    companyPersonaFunction;
     constructor(scope, id, props = {}) {
         super(scope, id, props);
         const eventBusName = props.eventBusName || process.env.EVENT_BUS_NAME || "default";
@@ -80,12 +87,123 @@ export class DelayedRepliesStack extends Stack {
             description: "ARN of the release router function",
             exportName: `${id}-ReleaseRouterFunctionArn`
         });
+        // Create DynamoDB tables for Management API
+        this.companyInfoTable = new dynamodb.Table(this, 'CompanyInfoTable', {
+            tableName: `${id}-company-info`,
+            partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            removalPolicy: RemovalPolicy.RETAIN, // Use DESTROY for dev environments
+            pointInTimeRecovery: true,
+        });
+        this.personasTable = new dynamodb.Table(this, 'PersonasTable', {
+            tableName: `${id}-personas`,
+            partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'personaId', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            removalPolicy: RemovalPolicy.RETAIN, // Use DESTROY for dev environments
+            pointInTimeRecovery: true,
+        });
+        // Create Management API Lambda functions
+        const commonLambdaProps = {
+            runtime: lambda.Runtime.NODEJS_20_X,
+            timeout: Duration.seconds(30),
+            memorySize: 512,
+            environment: {
+                COMPANY_INFO_TABLE: this.companyInfoTable.tableName,
+                PERSONAS_TABLE: this.personasTable.tableName,
+                NODE_OPTIONS: "--enable-source-maps"
+            },
+            bundling: {
+                minify: true,
+                sourceMap: true,
+                target: "es2022"
+            }
+        };
+        this.companyInfoFunction = new lambdaNodejs.NodejsFunction(this, "CompanyInfoFunction", {
+            ...commonLambdaProps,
+            entry: path.join(__dirname, "../../runtime/src/services/company-info-service.ts"),
+            handler: "handler",
+            functionName: `${id}-company-info-service`
+        });
+        this.personasFunction = new lambdaNodejs.NodejsFunction(this, "PersonasFunction", {
+            ...commonLambdaProps,
+            entry: path.join(__dirname, "../../runtime/src/services/personas-service.ts"),
+            handler: "handler",
+            functionName: `${id}-personas-service`
+        });
+        this.companyPersonaFunction = new lambdaNodejs.NodejsFunction(this, "CompanyPersonaFunction", {
+            ...commonLambdaProps,
+            entry: path.join(__dirname, "../../runtime/src/services/company-persona-service.ts"),
+            handler: "handler",
+            functionName: `${id}-company-persona-service`
+        });
+        // Grant DynamoDB permissions to Management API functions
+        this.companyInfoTable.grantReadWriteData(this.companyInfoFunction);
+        this.personasTable.grantReadWriteData(this.personasFunction);
+        this.companyInfoTable.grantReadData(this.companyPersonaFunction);
+        this.personasTable.grantReadData(this.companyPersonaFunction);
+        // Management API Lambda function ARNs for consumer integration
+        new CfnOutput(this, "CompanyInfoFunctionArn", {
+            value: this.companyInfoFunction.functionArn,
+            description: "ARN of the company info service function",
+            exportName: `${id}-CompanyInfoFunctionArn`
+        });
+        new CfnOutput(this, "PersonasFunctionArn", {
+            value: this.personasFunction.functionArn,
+            description: "ARN of the personas service function",
+            exportName: `${id}-PersonasFunctionArn`
+        });
+        new CfnOutput(this, "CompanyPersonaFunctionArn", {
+            value: this.companyPersonaFunction.functionArn,
+            description: "ARN of the company persona service function",
+            exportName: `${id}-CompanyPersonaFunctionArn`
+        });
     }
     /**
      * Grant an existing Lambda function permission to send messages to the release queue
      */
     grantSendToQueue(lambdaFunction) {
         this.releaseQueue.grantSendMessages(lambdaFunction);
+    }
+    /**
+     * Get Lambda function ARNs for attaching to consumer's API Gateway
+     */
+    getManagementApiFunctions() {
+        return {
+            companyInfo: {
+                functionArn: this.companyInfoFunction.functionArn,
+                functionName: this.companyInfoFunction.functionName,
+                basePath: '/company-info'
+            },
+            personas: {
+                functionArn: this.personasFunction.functionArn,
+                functionName: this.personasFunction.functionName,
+                basePath: '/personas'
+            },
+            companyPersona: {
+                functionArn: this.companyPersonaFunction.functionArn,
+                functionName: this.companyPersonaFunction.functionName,
+                basePath: '/company-persona'
+            }
+        };
+    }
+    /**
+     * Grant API Gateway permission to invoke the Management API functions
+     */
+    grantApiGatewayInvoke(apiGatewayArn) {
+        const apiGatewayPrincipal = new iam.ServicePrincipal('apigateway.amazonaws.com');
+        this.companyInfoFunction.addPermission('ApiGatewayInvokeCompanyInfo', {
+            principal: apiGatewayPrincipal,
+            sourceArn: `${apiGatewayArn}/*/*`
+        });
+        this.personasFunction.addPermission('ApiGatewayInvokePersonas', {
+            principal: apiGatewayPrincipal,
+            sourceArn: `${apiGatewayArn}/*/*`
+        });
+        this.companyPersonaFunction.addPermission('ApiGatewayInvokeCompanyPersona', {
+            principal: apiGatewayPrincipal,
+            sourceArn: `${apiGatewayArn}/*/*`
+        });
     }
 }
 //# sourceMappingURL=delayed-replies-stack.js.map
