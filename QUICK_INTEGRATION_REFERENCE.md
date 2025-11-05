@@ -107,19 +107,22 @@ const agent = new LangchainAgent(this, 'Agent', {
   eventBusName: 'my-event-bus'
 });
 
-// Delayed responses + Management API functions
+// Delayed responses + Management API with automatic bootstrap
 const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
-  eventBusName: 'my-event-bus'
+  eventBusName: 'my-event-bus',
+  apiGatewayConfig: {
+    existingApi: yourExistingApi,  // Automatic integration!
+    basePath: '/api'
+  }
 });
 
-// Attach Management API to your existing API Gateway
-const managementFunctions = delayedReplies.getManagementApiFunctions();
-delayedReplies.grantApiGatewayInvoke(yourExistingApi.restApiArn);
-
-// Add routes to your API Gateway (see full example below)
+// That's it! All Management API endpoints are automatically created
 ```
 
-### Attach Management API to Existing API Gateway
+### Manual API Gateway Integration (Alternative)
+
+If you need custom control over the API Gateway integration:
+
 ```typescript
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';

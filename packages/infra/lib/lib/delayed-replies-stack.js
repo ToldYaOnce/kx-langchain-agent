@@ -5,6 +5,7 @@ import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as sources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import { RemovalPolicy } from "aws-cdk-lib";
 import * as path from "path";
 export class DelayedRepliesStack extends Stack {
@@ -179,6 +180,10 @@ export class DelayedRepliesStack extends Stack {
             description: "ARN of the company persona service function",
             exportName: `${id}-CompanyPersonaFunctionArn`
         });
+        // Automatic API Gateway integration if provided
+        if (props.apiGatewayConfig?.existingApi) {
+            this.attachToApiGateway(props.apiGatewayConfig.existingApi, props.apiGatewayConfig.basePath);
+        }
     }
     /**
      * Grant an existing Lambda function permission to send messages to the release queue
@@ -210,6 +215,7 @@ export class DelayedRepliesStack extends Stack {
     }
     /**
      * Grant API Gateway permission to invoke the Management API functions
+     * @deprecated Use attachToApiGateway() for automatic integration or LambdaIntegration for manual setup
      */
     grantApiGatewayInvoke(apiGatewayArn) {
         const apiGatewayPrincipal = new iam.ServicePrincipal('apigateway.amazonaws.com');
@@ -224,6 +230,75 @@ export class DelayedRepliesStack extends Stack {
         this.companyPersonaFunction.addPermission('ApiGatewayInvokeCompanyPersona', {
             principal: apiGatewayPrincipal,
             sourceArn: `${apiGatewayArn}/*/*`
+        });
+    }
+    /**
+     * Automatically attach Management API endpoints to an existing API Gateway
+     * This follows the pattern from @toldyaonce/kx-notifications-and-messaging-cdk
+     */
+    attachToApiGateway(api, basePath = '') {
+        // Company Info endpoints
+        const companyInfoResource = api.root.resourceForPath(`${basePath}/company-info`);
+        const companyInfoIntegration = new apigateway.LambdaIntegration(this.companyInfoFunction);
+        companyInfoResource.addMethod('POST', companyInfoIntegration);
+        companyInfoResource.addMethod('GET', companyInfoIntegration);
+        companyInfoResource.addCorsPreflight({
+            allowOrigins: ['*'],
+            allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['Content-Type', 'Authorization']
+        });
+        const companyByIdResource = companyInfoResource.addResource('{tenantId}');
+        companyByIdResource.addMethod('GET', companyInfoIntegration);
+        companyByIdResource.addMethod('PATCH', companyInfoIntegration);
+        companyByIdResource.addMethod('DELETE', companyInfoIntegration);
+        companyByIdResource.addCorsPreflight({
+            allowOrigins: ['*'],
+            allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['Content-Type', 'Authorization']
+        });
+        // Personas endpoints
+        const personasResource = api.root.resourceForPath(`${basePath}/personas`);
+        const personasIntegration = new apigateway.LambdaIntegration(this.personasFunction);
+        const personasByTenantResource = personasResource.addResource('{tenantId}');
+        personasByTenantResource.addMethod('GET', personasIntegration);
+        personasByTenantResource.addMethod('POST', personasIntegration);
+        personasByTenantResource.addCorsPreflight({
+            allowOrigins: ['*'],
+            allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['Content-Type', 'Authorization']
+        });
+        const personaByIdResource = personasByTenantResource.addResource('{personaId}');
+        personaByIdResource.addMethod('GET', personasIntegration);
+        personaByIdResource.addMethod('PATCH', personasIntegration);
+        personaByIdResource.addMethod('DELETE', personasIntegration);
+        personaByIdResource.addCorsPreflight({
+            allowOrigins: ['*'],
+            allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['Content-Type', 'Authorization']
+        });
+        const randomPersonaResource = personasByTenantResource.addResource('random');
+        randomPersonaResource.addMethod('GET', personasIntegration);
+        randomPersonaResource.addCorsPreflight({
+            allowOrigins: ['*'],
+            allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['Content-Type', 'Authorization']
+        });
+        // Company Persona endpoints
+        const companyPersonaResource = api.root.resourceForPath(`${basePath}/company-persona`);
+        const companyPersonaIntegration = new apigateway.LambdaIntegration(this.companyPersonaFunction);
+        const companyPersonaByTenantResource = companyPersonaResource.addResource('{tenantId}');
+        companyPersonaByTenantResource.addMethod('GET', companyPersonaIntegration);
+        companyPersonaByTenantResource.addCorsPreflight({
+            allowOrigins: ['*'],
+            allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['Content-Type', 'Authorization']
+        });
+        const companyPersonaByIdResource = companyPersonaByTenantResource.addResource('{personaId}');
+        companyPersonaByIdResource.addMethod('GET', companyPersonaIntegration);
+        companyPersonaByIdResource.addCorsPreflight({
+            allowOrigins: ['*'],
+            allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['Content-Type', 'Authorization']
         });
     }
 }

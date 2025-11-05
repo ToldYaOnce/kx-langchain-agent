@@ -258,21 +258,40 @@ export const handler = async (event: any) => {
 
 ### Management API (Company & Personas)
 
-The Management API provides Lambda functions that attach to **your existing API Gateway**, not a separate one. Deploy the functions and integrate them with your API:
+The Management API provides Lambda functions that attach to **your existing API Gateway**. Choose between automatic bootstrap or manual integration:
+
+#### Option 1: Automatic Bootstrap (Recommended)
 
 ```typescript
 import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
 
-// Deploy the stack with Management API functions
+// Automatic integration - just 3 lines!
+const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
+  eventBusName: 'your-event-bus',
+  apiGatewayConfig: {
+    existingApi: yourExistingApi,  // RestApi from aws-cdk-lib/aws-apigateway
+    basePath: '/api'               // Optional prefix (default: '/')
+  }
+});
+
+// That's it! All endpoints are automatically created with CORS support
+```
+
+#### Option 2: Manual Integration
+
+```typescript
+import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
+
+// Deploy the stack without automatic integration
 const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
   eventBusName: 'your-event-bus'
 });
 
-// Get the Lambda function details for API Gateway integration
-const managementFunctions = delayedReplies.getManagementApiFunctions();
+// Manual attachment using helper method
+delayedReplies.attachToApiGateway(yourExistingApi, '/api');
 
-// Grant your API Gateway permission to invoke the functions
-delayedReplies.grantApiGatewayInvoke(yourApiGateway.restApiArn);
+// Or get function details for custom integration
+const managementFunctions = delayedReplies.getManagementApiFunctions();
 ```
 
 📚 **[Complete Bootstrap Guide →](./MANAGEMENT_API_BOOTSTRAP_GUIDE.md)**

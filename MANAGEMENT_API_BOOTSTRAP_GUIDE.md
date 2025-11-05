@@ -33,20 +33,52 @@ module.exports = {
 
 ## 🚀 Bootstrap Steps
 
-### 1. Deploy the DelayedRepliesStack
+### Option 1: Automatic Bootstrap (Recommended)
 
 ```typescript
 import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
 
+// Just 3 lines for complete integration!
+const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
+  eventBusName: 'your-event-bus',
+  apiGatewayConfig: {
+    existingApi: yourExistingApi,  // RestApi from aws-cdk-lib/aws-apigateway
+    basePath: '/api'               // Optional prefix (default: '/')
+  }
+});
+
+// That's it! All endpoints are automatically created with:
+// - Proper Lambda integrations
+// - CORS preflight support
+// - All HTTP methods (GET, POST, PATCH, DELETE)
+// - Automatic permissions via LambdaIntegration
+
+## ✨ Benefits of Automatic Bootstrap
+
+- **Reduces boilerplate**: From ~20 lines to 3 lines of configuration
+- **Consistent with kx-notifications-and-messaging-cdk pattern**
+- **Automatic CORS handling**: All resources get proper CORS preflight
+- **LambdaIntegration permissions**: No manual IAM configuration needed
+- **Backward compatible**: Manual integration still available
+- **Uses `resourceForPath()`**: Avoids conflicts with existing resources
+
+```
+
+### Option 2: Manual Integration
+
+```typescript
+import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
+
+// Deploy without automatic integration
 const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
   eventBusName: 'your-event-bus'
 });
 
-// Get Lambda function details
-const managementFunctions = delayedReplies.getManagementApiFunctions();
+// Use helper method for manual attachment
+delayedReplies.attachToApiGateway(yourExistingApi, '/api');
 
-// Grant your API Gateway permission to invoke the functions
-delayedReplies.grantApiGatewayInvoke(yourApiGateway.restApiArn);
+// Or get function details for custom integration
+const managementFunctions = delayedReplies.getManagementApiFunctions();
 ```
 
 ### 2. Import Services in Your Consumer Code

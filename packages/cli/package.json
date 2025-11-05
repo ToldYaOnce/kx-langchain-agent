@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-langchain-agent-cli",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "CLI for local development and testing of KxGen LangChain agent",
   "type": "module",
   "main": "./dist/index.js",

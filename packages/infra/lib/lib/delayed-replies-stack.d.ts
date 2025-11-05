@@ -4,12 +4,13 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as apigateway from "aws-cdk-lib/aws-apigateway";
 export interface DelayedRepliesStackProps extends StackProps {
     eventBusName?: string;
     existingAgentLambdaArn?: string;
-    existingApiGateway?: {
-        restApiId: string;
-        rootResourceId: string;
+    apiGatewayConfig?: {
+        existingApi: apigateway.RestApi;
+        basePath?: string;
     };
 }
 export declare class DelayedRepliesStack extends Stack {
@@ -47,7 +48,13 @@ export declare class DelayedRepliesStack extends Stack {
     };
     /**
      * Grant API Gateway permission to invoke the Management API functions
+     * @deprecated Use attachToApiGateway() for automatic integration or LambdaIntegration for manual setup
      */
     grantApiGatewayInvoke(apiGatewayArn: string): void;
+    /**
+     * Automatically attach Management API endpoints to an existing API Gateway
+     * This follows the pattern from @toldyaonce/kx-notifications-and-messaging-cdk
+     */
+    attachToApiGateway(api: apigateway.RestApi, basePath?: string): void;
 }
 //# sourceMappingURL=delayed-replies-stack.d.ts.map

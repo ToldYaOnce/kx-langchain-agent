@@ -157,20 +157,22 @@ await eventBridge.send(new PutEventsCommand({
 
 ### 🌐 Management APIs
 
-The framework provides Lambda functions that integrate with **your existing API Gateway**:
+Automatic bootstrap pattern - just 3 lines to integrate with **your existing API Gateway**:
 
 ```typescript
-// Deploy Management API functions
-const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies');
-const managementFunctions = delayedReplies.getManagementApiFunctions();
+// Automatic Management API integration
+const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
+  eventBusName: 'your-event-bus',
+  apiGatewayConfig: {
+    existingApi: yourExistingApi,  // Your existing RestApi
+    basePath: '/api'               // Optional prefix
+  }
+});
 
-// Attach to your existing API Gateway
-delayedReplies.grantApiGatewayInvoke(yourApiGateway.restApiArn);
-
-// Add routes to your API:
-// POST /company-info - Create/update company info
-// GET /personas/{tenantId} - List personas
-// GET /company-persona/{tenantId}/{personaId} - Get combined config
+// All endpoints automatically created:
+// POST /api/company-info - Create/update company info
+// GET /api/personas/{tenantId} - List personas  
+// GET /api/company-persona/{tenantId}/{personaId} - Get combined config
 ```
 
 📚 **[Complete Integration Guide →](./CONSUMER_INTEGRATION_GUIDE.md)**  
