@@ -1,0 +1,48 @@
+{
+  "name": "@toldyaonce/kx-delayed-replies-infra",
+  "version": "1.0.0",
+  "description": "CDK infrastructure for delayed agent replies system",
+  "main": "lib/delayed-replies-stack.js",
+  "types": "lib/delayed-replies-stack.d.ts",
+  "bin": {
+    "delayed-replies-infra": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc --project ./tsconfig.json",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk",
+    "deploy": "cdk deploy",
+    "diff": "cdk diff",
+    "synth": "cdk synth",
+    "clean": "rm -rf lib cdk.out"
+  },
+  "keywords": [
+    "cdk",
+    "infrastructure",
+    "sqs",
+    "lambda",
+    "delayed-responses"
+  ],
+  "author": "toldyaonce <dev@toldyaonce.com>",
+  "license": "MIT",
+  "dependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.8",
+    "@types/node": "^20.9.0",
+    "aws-cdk": "^2.100.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
+}
