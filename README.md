@@ -102,6 +102,87 @@ Intelligent goal management system:
 - **Appointment Scheduling**: Calendar integration
 - **Follow-up Management**: Automated nurturing sequences
 
+## 🔌 Consumer Integration
+
+### Quick Start for Consumers
+
+1. **Deploy the Agent Infrastructure**
+```bash
+# Deploy core agent + delayed responses
+cd packages/iac && npm run deploy
+cd packages/infra && npm run deploy
+```
+
+2. **Set Up EventBridge Integration**
+```typescript
+// Subscribe to agent responses
+const agentResponseRule = new events.Rule(this, 'AgentResponseRule', {
+  eventPattern: {
+    source: ['kxgen.agent'],
+    detailType: ['agent.reply.created', 'agent.message.read', 'agent.typing.started']
+  }
+});
+agentResponseRule.addTarget(new targets.LambdaFunction(yourMessageHandler));
+```
+
+3. **Publish User Messages**
+```typescript
+// When user sends a message
+await eventBridge.send(new PutEventsCommand({
+  Entries: [{
+    Source: 'kxgen.messaging',
+    DetailType: 'lead.message.created',
+    Detail: JSON.stringify({
+      tenantId: 'your-tenant-id',
+      source: 'chat', // or 'sms', 'email', 'api'
+      text: userMessage,
+      email_lc: userEmail,
+      conversation_id: conversationId
+    })
+  }]
+}));
+```
+
+### 📡 Event Contracts
+
+**You Publish (Inbound):**
+- `lead.message.created` - User messages to process
+
+**You Subscribe To (Outbound):**
+- `agent.reply.created` - Final agent responses
+- `agent.message.read` - Read receipts (delayed response system)
+- `agent.typing.started/stopped` - Typing indicators (chat only)
+- `agent.error` - Error handling
+- `agent.trace` - Monitoring/telemetry
+
+### 🌐 Management APIs
+
+Configure companies and personas dynamically:
+
+```typescript
+// Create/update company info
+POST /company-info
+{
+  "tenantId": "your-tenant",
+  "name": "Your Company",
+  "industry": "Your Industry",
+  "intentCapturing": { /* intent configuration */ }
+}
+
+// Create/update personas  
+POST /personas/{tenantId}
+{
+  "personaId": "carlos",
+  "name": "Carlos",
+  "personality": { /* persona configuration */ }
+}
+
+// Get combined company + persona
+GET /company-persona/{tenantId}/{personaId}
+```
+
+📚 **[Complete Integration Guide →](./CONSUMER_INTEGRATION_GUIDE.md)**
+
 ## 🚀 Deployment
 
 ### Quick Deploy
