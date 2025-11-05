@@ -258,15 +258,77 @@ export const handler = async (event: any) => {
 
 ### Management API (Company & Personas)
 
-Deploy the Management API to configure companies and personas dynamically:
+The Management API provides Lambda functions that attach to **your existing API Gateway**, not a separate one. Deploy the functions and integrate them with your API:
 
 ```typescript
-import { ManagementApi } from '@toldyaonce/kx-langchain-agent-iac';
+import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
 
-const managementApi = new ManagementApi(this, 'ManagementApi', {
-  // Optional: specify event bus name
+// Deploy the stack with Management API functions
+const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
   eventBusName: 'your-event-bus'
 });
+
+// Get the Lambda function details for API Gateway integration
+const managementFunctions = delayedReplies.getManagementApiFunctions();
+
+// Grant your API Gateway permission to invoke the functions
+delayedReplies.grantApiGatewayInvoke(yourApiGateway.restApiArn);
+```
+
+### Attach to Your Existing API Gateway
+
+```typescript
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+
+// Assuming you have an existing API Gateway
+const yourExistingApi = apigateway.RestApi.fromRestApiAttributes(this, 'ExistingApi', {
+  restApiId: 'your-api-id',
+  rootResourceId: 'your-root-resource-id'
+});
+
+// Create resources and methods for Management API
+const managementFunctions = delayedReplies.getManagementApiFunctions();
+
+// Company Info endpoints
+const companyInfoResource = yourExistingApi.root.addResource('company-info');
+const companyInfoIntegration = new apigateway.LambdaIntegration(
+  lambda.Function.fromFunctionArn(this, 'CompanyInfoFn', managementFunctions.companyInfo.functionArn)
+);
+
+companyInfoResource.addMethod('POST', companyInfoIntegration); // Create company
+companyInfoResource.addMethod('GET', companyInfoIntegration);  // List companies
+
+const companyInfoByIdResource = companyInfoResource.addResource('{tenantId}');
+companyInfoByIdResource.addMethod('GET', companyInfoIntegration);    // Get company
+companyInfoByIdResource.addMethod('PUT', companyInfoIntegration);    // Update company
+companyInfoByIdResource.addMethod('DELETE', companyInfoIntegration); // Delete company
+
+// Personas endpoints
+const personasResource = yourExistingApi.root.addResource('personas');
+const personasIntegration = new apigateway.LambdaIntegration(
+  lambda.Function.fromFunctionArn(this, 'PersonasFn', managementFunctions.personas.functionArn)
+);
+
+const personasByTenantResource = personasResource.addResource('{tenantId}');
+personasByTenantResource.addMethod('GET', personasIntegration);  // List personas
+personasByTenantResource.addMethod('POST', personasIntegration); // Create persona
+
+const personasByIdResource = personasByTenantResource.addResource('{personaId}');
+personasByIdResource.addMethod('GET', personasIntegration);    // Get persona
+personasByIdResource.addMethod('PUT', personasIntegration);    // Update persona
+personasByIdResource.addMethod('DELETE', personasIntegration); // Delete persona
+
+// Company + Persona combined endpoint
+const companyPersonaResource = yourExistingApi.root.addResource('company-persona');
+const companyPersonaIntegration = new apigateway.LambdaIntegration(
+  lambda.Function.fromFunctionArn(this, 'CompanyPersonaFn', managementFunctions.companyPersona.functionArn)
+);
+
+const companyPersonaByTenantResource = companyPersonaResource.addResource('{tenantId}');
+companyPersonaByTenantResource.addMethod('GET', companyPersonaIntegration); // Get company + random persona
+
+const companyPersonaByIdResource = companyPersonaByTenantResource.addResource('{personaId}');
+companyPersonaByIdResource.addMethod('GET', companyPersonaIntegration); // Get company + specific persona
 ```
 
 #### API Endpoints
@@ -406,18 +468,21 @@ npm run deploy
 # - EventBridge permissions
 ```
 
-### 3. Deploy Management API
+### 3. Integrate Management API with Your API Gateway
 
 ```typescript
 // In your CDK stack
-import { ManagementApi } from '@toldyaonce/kx-delayed-replies-infra';
+import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
 
-const managementApi = new ManagementApi(this, 'ManagementApi');
+const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies');
 
-// Get the API URL for your applications
-new CfnOutput(this, 'ManagementApiUrl', {
-  value: managementApi.api.url
-});
+// Get Lambda function details
+const managementFunctions = delayedReplies.getManagementApiFunctions();
+
+// Grant your API Gateway permission to invoke the functions
+delayedReplies.grantApiGatewayInvoke(yourExistingApiGateway.restApiArn);
+
+// Add routes to your existing API Gateway (see API Integration section above)
 ```
 
 ### 4. Configure Environment Variables

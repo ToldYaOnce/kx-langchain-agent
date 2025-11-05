@@ -101,20 +101,78 @@ agentErrorRule.addTarget(new targets.LambdaFunction(errorHandlerLambda));
 ```typescript
 import { LangchainAgent } from '@toldyaonce/kx-langchain-agent-iac';
 import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
-import { ManagementApi } from '@toldyaonce/kx-delayed-replies-infra';
 
 // Core agent
 const agent = new LangchainAgent(this, 'Agent', {
   eventBusName: 'my-event-bus'
 });
 
-// Delayed responses
+// Delayed responses + Management API functions
 const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
   eventBusName: 'my-event-bus'
 });
 
-// Management API
-const managementApi = new ManagementApi(this, 'ManagementApi');
+// Attach Management API to your existing API Gateway
+const managementFunctions = delayedReplies.getManagementApiFunctions();
+delayedReplies.grantApiGatewayInvoke(yourExistingApi.restApiArn);
+
+// Add routes to your API Gateway (see full example below)
+```
+
+### Attach Management API to Existing API Gateway
+```typescript
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+
+// Reference your existing API Gateway
+const existingApi = apigateway.RestApi.fromRestApiAttributes(this, 'ExistingApi', {
+  restApiId: 'your-api-id',
+  rootResourceId: 'your-root-resource-id'
+});
+
+const managementFunctions = delayedReplies.getManagementApiFunctions();
+
+// Company Info API
+const companyInfoResource = existingApi.root.addResource('company-info');
+const companyInfoFn = lambda.Function.fromFunctionArn(
+  this, 'CompanyInfoFn', managementFunctions.companyInfo.functionArn
+);
+const companyInfoIntegration = new apigateway.LambdaIntegration(companyInfoFn);
+
+companyInfoResource.addMethod('POST', companyInfoIntegration);
+const companyByIdResource = companyInfoResource.addResource('{tenantId}');
+companyByIdResource.addMethod('GET', companyInfoIntegration);
+companyByIdResource.addMethod('PUT', companyInfoIntegration);
+companyByIdResource.addMethod('DELETE', companyInfoIntegration);
+
+// Personas API
+const personasResource = existingApi.root.addResource('personas');
+const personasFn = lambda.Function.fromFunctionArn(
+  this, 'PersonasFn', managementFunctions.personas.functionArn
+);
+const personasIntegration = new apigateway.LambdaIntegration(personasFn);
+
+const personasByTenantResource = personasResource.addResource('{tenantId}');
+personasByTenantResource.addMethod('GET', personasIntegration);
+personasByTenantResource.addMethod('POST', personasIntegration);
+
+const personaByIdResource = personasByTenantResource.addResource('{personaId}');
+personaByIdResource.addMethod('GET', personasIntegration);
+personaByIdResource.addMethod('PUT', personasIntegration);
+personaByIdResource.addMethod('DELETE', personasIntegration);
+
+// Combined Company + Persona API
+const companyPersonaResource = existingApi.root.addResource('company-persona');
+const companyPersonaFn = lambda.Function.fromFunctionArn(
+  this, 'CompanyPersonaFn', managementFunctions.companyPersona.functionArn
+);
+const companyPersonaIntegration = new apigateway.LambdaIntegration(companyPersonaFn);
+
+const companyPersonaByTenantResource = companyPersonaResource.addResource('{tenantId}');
+companyPersonaByTenantResource.addMethod('GET', companyPersonaIntegration);
+
+const companyPersonaByIdResource = companyPersonaByTenantResource.addResource('{personaId}');
+companyPersonaByIdResource.addMethod('GET', companyPersonaIntegration);
 ```
 
 ## 🌐 Management API Usage

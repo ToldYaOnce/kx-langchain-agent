@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/langchain-agent-runtime",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Lambda handlers and shared libraries for KxGen LangChain agent",
   "type": "module",
   "main": "./dist/index.js",

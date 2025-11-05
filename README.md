@@ -157,28 +157,20 @@ await eventBridge.send(new PutEventsCommand({
 
 ### 🌐 Management APIs
 
-Configure companies and personas dynamically:
+The framework provides Lambda functions that integrate with **your existing API Gateway**:
 
 ```typescript
-// Create/update company info
-POST /company-info
-{
-  "tenantId": "your-tenant",
-  "name": "Your Company",
-  "industry": "Your Industry",
-  "intentCapturing": { /* intent configuration */ }
-}
+// Deploy Management API functions
+const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies');
+const managementFunctions = delayedReplies.getManagementApiFunctions();
 
-// Create/update personas  
-POST /personas/{tenantId}
-{
-  "personaId": "carlos",
-  "name": "Carlos",
-  "personality": { /* persona configuration */ }
-}
+// Attach to your existing API Gateway
+delayedReplies.grantApiGatewayInvoke(yourApiGateway.restApiArn);
 
-// Get combined company + persona
-GET /company-persona/{tenantId}/{personaId}
+// Add routes to your API:
+// POST /company-info - Create/update company info
+// GET /personas/{tenantId} - List personas
+// GET /company-persona/{tenantId}/{personaId} - Get combined config
 ```
 
 📚 **[Complete Integration Guide →](./CONSUMER_INTEGRATION_GUIDE.md)**
