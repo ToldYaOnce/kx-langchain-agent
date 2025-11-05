@@ -1,0 +1,39 @@
+{
+  "name": "@toldyaonce/kx-langchain-agent-cli",
+  "version": "1.0.5",
+  "description": "CLI for local development and testing of KxGen LangChain agent",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "kxagent": "./bin/kxagent.js"
+  },
+  "scripts": {
+    "build": "tsc --project ./tsconfig.json && chmod +x bin/kxagent.js",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "jest",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@toldyaonce/langchain-agent-runtime": "^1.0.0",
+    "chalk": "^5.3.0",
+    "commander": "^11.0.0",
+    "dotenv": "^16.3.0",
+    "inquirer": "^9.2.0",
+    "ora": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/inquirer": "9.0.9",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

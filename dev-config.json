@@ -1,0 +1,15 @@
+{
+  "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+  "temperature": 0.7,
+  "maxTokens": 1000,
+  "systemPrompt": "You are a helpful AI assistant. Be concise and friendly.",
+  "tenantId": "dev-test",
+  "email": "dev@example.com",
+  "mockMode": true,
+  "customPrompts": {
+    "greeting": "Always start responses with 'Hello there!'",
+    "technical": "Explain things in technical detail with code examples",
+    "casual": "Be very casual and use emojis"
+  }
+}
+

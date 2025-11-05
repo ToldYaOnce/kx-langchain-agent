@@ -1,0 +1,43 @@
+{
+  "name": "@toldyaonce/kx-langchain-agent-iac",
+  "version": "1.0.8",
+  "description": "CDK constructs and stacks for KxGen LangChain agent",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "add:utils": "npm rm @toldyaonce/kx-cdk-constructs && npm i @toldyaonce/kx-cdk-constructs@latest",
+    "build": "tsc --project ./tsconfig.json",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "diff": "cdk diff"
+  },
+  "dependencies": {
+    "@toldyaonce/kx-cdk-constructs": "1.42.0",
+    "@toldyaonce/langchain-agent-runtime": "^1.0.0",
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "aws-cdk": "^2.100.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
