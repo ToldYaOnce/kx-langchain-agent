@@ -1,7 +1,8 @@
 import { Stack, StackProps, Duration, CfnOutput } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import * as lambda from "aws-cdk-lib/aws-lambda-nodejs";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as sources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as path from "path";
@@ -13,7 +14,7 @@ export interface DelayedRepliesStackProps extends StackProps {
 
 export class DelayedRepliesStack extends Stack {
   public readonly releaseQueue: sqs.Queue;
-  public readonly releaseRouterFunction: lambda.NodejsFunction;
+  public readonly releaseRouterFunction: lambdaNodejs.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: DelayedRepliesStackProps = {}) {
     super(scope, id, props);
@@ -37,7 +38,7 @@ export class DelayedRepliesStack extends Stack {
     });
 
     // Create release router Lambda function
-    this.releaseRouterFunction = new lambda.NodejsFunction(this, "ReleaseRouterFunction", {
+    this.releaseRouterFunction = new lambdaNodejs.NodejsFunction(this, "ReleaseRouterFunction", {
       entry: path.join(__dirname, "../../release-router/src/handler.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_20_X,
