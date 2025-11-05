@@ -4,8 +4,8 @@ import {
   createTestConfig,
   type InboundMessageEvent,
   type MessageSource,
-} from '@toldyaonce/langchain-agent-runtime';
-import { AgentRouterHandler as routerHandler } from '@toldyaonce/langchain-agent-runtime';
+} from '@toldyaonce/kx-langchain-agent-runtime';
+import { AgentRouterHandler as routerHandler } from '@toldyaonce/kx-langchain-agent-runtime';
 
 interface SimulateOptions {
   tenantId: string;

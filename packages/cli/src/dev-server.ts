@@ -1,7 +1,7 @@
 import { createServer } from 'http';
 import { readFileSync } from 'fs';
 import { URL } from 'url';
-import { AgentService, DynamoDBService, EventBridgeService, createTestConfig } from '@toldyaonce/langchain-agent-runtime';
+import { AgentService, DynamoDBService, EventBridgeService, createTestConfig } from '@toldyaonce/kx-langchain-agent-runtime';
 
 const config = createTestConfig();
 const dynamoService = new DynamoDBService(config);

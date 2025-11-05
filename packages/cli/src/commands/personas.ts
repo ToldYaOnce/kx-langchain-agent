@@ -1,8 +1,8 @@
 import { Command } from 'commander';
 // Note: listPersonas and getPersona are not exported from runtime, using PersonaService instead
-import { AgentService, PersonaService } from '@toldyaonce/langchain-agent-runtime';
-import { createTestConfig } from '@toldyaonce/langchain-agent-runtime';
-import type { AgentContext } from '@toldyaonce/langchain-agent-runtime';
+import { AgentService, PersonaService } from '@toldyaonce/kx-langchain-agent-runtime';
+import { createTestConfig } from '@toldyaonce/kx-langchain-agent-runtime';
+import type { AgentContext } from '@toldyaonce/kx-langchain-agent-runtime';
 
 export function createPersonasCommand(): Command {
   const personas = new Command('personas');

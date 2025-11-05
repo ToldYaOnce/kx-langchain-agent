@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { GoalOrchestrator, PersonaService, type CompanyInfo } from '@toldyaonce/langchain-agent-runtime';
+import { GoalOrchestrator, PersonaService, type CompanyInfo } from '@toldyaonce/kx-langchain-agent-runtime';
 
 interface TestGoalsOptions {
   tenantId: string;

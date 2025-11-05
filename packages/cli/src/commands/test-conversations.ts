@@ -4,7 +4,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { AgentService } from '@toldyaonce/langchain-agent-runtime';
+import { AgentService } from '@toldyaonce/kx-langchain-agent-runtime';
 import { createChatConfig } from './chat.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 

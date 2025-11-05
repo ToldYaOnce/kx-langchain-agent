@@ -9,9 +9,9 @@ import {
   createTestConfig,
   type RuntimeConfig,
   type MessageSource,
-} from '@toldyaonce/langchain-agent-runtime';
+} from '@toldyaonce/kx-langchain-agent-runtime';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
-import { PersonaService } from '@toldyaonce/langchain-agent-runtime';
+import { PersonaService } from '@toldyaonce/kx-langchain-agent-runtime';
 
 export interface ChatOptions {
   tenantId: string;

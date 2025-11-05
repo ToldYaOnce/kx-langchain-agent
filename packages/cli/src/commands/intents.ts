@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
-import { PersonaService, IntentService, type CompanyInfo } from '@toldyaonce/langchain-agent-runtime';
+import { PersonaService, IntentService, type CompanyInfo } from '@toldyaonce/kx-langchain-agent-runtime';
 
 interface IntentOptions {
   persona?: string;

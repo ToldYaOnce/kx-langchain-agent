@@ -5,4 +5,4 @@ export { intentsCommand } from './commands/intents.js';
 export { modelsCommand } from './commands/models.js';
 
 // Re-export runtime types and utilities for CLI use
-export * from '@toldyaonce/langchain-agent-runtime';
+export * from '@toldyaonce/kx-langchain-agent-runtime';

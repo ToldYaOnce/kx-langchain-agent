@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { AgentService, createTestConfig, type AgentResponse } from '@toldyaonce/langchain-agent-runtime';
-import { PersonaService, type CompanyInfo } from '@toldyaonce/langchain-agent-runtime';
+import { AgentService, createTestConfig, type AgentResponse } from '@toldyaonce/kx-langchain-agent-runtime';
+import { PersonaService, type CompanyInfo } from '@toldyaonce/kx-langchain-agent-runtime';
 
 interface TestStructuredOptions {
   tenantId: string;

@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import { ChatBedrockConverse } from '@langchain/aws';
-import { createTestConfig } from '@toldyaonce/langchain-agent-runtime';
+import { createTestConfig } from '@toldyaonce/kx-langchain-agent-runtime';
 
 interface TestModelOptions {
   model: string;

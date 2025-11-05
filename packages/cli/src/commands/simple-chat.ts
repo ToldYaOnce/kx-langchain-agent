@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as readline from 'readline';
-import { AgentService } from '@toldyaonce/langchain-agent-runtime';
+import { AgentService } from '@toldyaonce/kx-langchain-agent-runtime';
 import { createChatConfig, type ChatOptions } from './chat.js';
 
 interface SimpleChatOptions extends ChatOptions {
@@ -25,8 +25,8 @@ export async function simpleChatCommand(options: SimpleChatOptions) {
     
     // Show persona greeting
     try {
-      const { PersonaService } = await import('@toldyaonce/langchain-agent-runtime');
-      const { GreetingService } = await import('@toldyaonce/langchain-agent-runtime');
+      const { PersonaService } = await import('@toldyaonce/kx-langchain-agent-runtime');
+      const { GreetingService } = await import('@toldyaonce/kx-langchain-agent-runtime');
       
       const personaService = new PersonaService(null);
       const persona = await personaService.getPersona(options.tenantId, options.persona || 'carlos', config.companyInfo);
