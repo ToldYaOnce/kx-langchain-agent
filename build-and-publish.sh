@@ -24,7 +24,7 @@ cd packages/iac
 echo "📦 Bumping IaC version..."
 npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
 # Replace workspace dependency with actual version
-sed -i.bak 's/"@toldyaonce\/langchain-agent-runtime": "workspace:\^"/"@toldyaonce\/langchain-agent-runtime": "^1.0.0"/g' package.json
+sed -i.bak 's/"@toldyaonce\/kx-langchain-agent-runtime": "workspace:\^"/"@toldyaonce\/kx-langchain-agent-runtime": "^1.0.0"/g' package.json
 # Set up scoped registry for our packages
 echo "@toldyaonce:registry=https://npm.pkg.github.com" > .npmrc
 npm install --no-package-lock
@@ -41,7 +41,7 @@ cd packages/cli
 echo "📦 Bumping CLI version..."
 npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
 # Replace workspace dependency with actual version
-sed -i.bak 's/"@toldyaonce\/langchain-agent-runtime": "workspace:\^"/"@toldyaonce\/langchain-agent-runtime": "^1.0.0"/g' package.json
+sed -i.bak 's/"@toldyaonce\/kx-langchain-agent-runtime": "workspace:\^"/"@toldyaonce\/kx-langchain-agent-runtime": "^1.0.0"/g' package.json
 # Set up scoped registry for our packages
 echo "@toldyaonce:registry=https://npm.pkg.github.com" > .npmrc
 npm install --no-package-lock
@@ -52,14 +52,65 @@ mv package.json.bak package.json
 rm -f .npmrc
 cd ../..
 
+# Build and publish agent-core package
+echo "🔨 Building and publishing agent-core package..."
+cd packages/agent-core
+echo "📦 Bumping agent-core version..."
+npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
+npm install --no-package-lock
+npm run build
+npm publish --registry https://npm.pkg.github.com
+cd ../..
+
+# Wait a moment for package to be available
+echo "⏳ Waiting for agent-core package to be available..."
+sleep 5
+
+# Build and publish release-router package
+echo "🔨 Building and publishing release-router package..."
+cd packages/release-router
+echo "📦 Bumping release-router version..."
+npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
+# Replace workspace dependency with actual version
+sed -i.bak 's/"@toldyaonce\/kx-agent-core": "workspace:\^"/"@toldyaonce\/kx-agent-core": "^1.0.0"/g' package.json
+# Set up scoped registry for our packages
+echo "@toldyaonce:registry=https://npm.pkg.github.com" > .npmrc
+npm install --no-package-lock
+npm run build
+npm publish --registry https://npm.pkg.github.com
+# Restore original package.json and clean up
+mv package.json.bak package.json
+rm -f .npmrc
+cd ../..
+
+# Wait a moment for package to be available
+echo "⏳ Waiting for release-router package to be available..."
+sleep 5
+
+# Build and publish infra package (DelayedRepliesStack)
+echo "🔨 Building and publishing infra package..."
+cd packages/infra
+echo "📦 Bumping infra version..."
+npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
+npm install --no-package-lock
+npm run build
+npm publish --registry https://npm.pkg.github.com
+cd ../..
+
 echo "✅ All packages built and published successfully to GitHub!"
 echo ""
 echo "📋 Published packages (with new patch versions):"
-echo "  - @toldyaonce/langchain-agent-runtime"
+echo "  - @toldyaonce/kx-langchain-agent-runtime"
 echo "  - @toldyaonce/kx-langchain-agent-iac" 
 echo "  - @toldyaonce/kx-langchain-agent-cli"
+echo "  - @toldyaonce/kx-agent-core"
+echo "  - @toldyaonce/kx-release-router"
+echo "  - @toldyaonce/kx-delayed-replies-infra"
 echo ""
 echo "🛠️  Install CLI globally:"
 echo "     npm install -g @toldyaonce/kx-langchain-agent-cli --registry https://npm.pkg.github.com"
+echo ""
+echo "🚀 Install delayed replies infrastructure:"
+echo "     npm install @toldyaonce/kx-delayed-replies-infra --registry https://npm.pkg.github.com"
 echo ""
 echo "💡 Note: All packages were automatically bumped to new patch versions"

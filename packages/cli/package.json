@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-langchain-agent-cli",
-  "version": "1.0.8",
+  "version": "1.0.12",
   "description": "CLI for local development and testing of KxGen LangChain agent",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,7 +16,7 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
-    "@toldyaonce/langchain-agent-runtime": "^1.0.0",
+    "@toldyaonce/kx-langchain-agent-runtime": "^1.0.0",
     "chalk": "^5.3.0",
     "commander": "^11.0.0",
     "dotenv": "^16.3.0",

@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-langchain-agent-iac",
-  "version": "1.0.12",
+  "version": "1.0.16",
   "description": "CDK constructs and stacks for KxGen LangChain agent",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@toldyaonce/kx-cdk-constructs": "1.42.0",
-    "@toldyaonce/langchain-agent-runtime": "^1.0.0",
+    "@toldyaonce/kx-langchain-agent-runtime": "^1.0.0",
     "aws-cdk-lib": "^2.100.0",
     "constructs": "^10.3.0"
   },
