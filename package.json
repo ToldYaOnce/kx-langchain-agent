@@ -28,7 +28,7 @@
     "clean": "yarn workspaces foreach -A run clean"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "20.19.24",
     "tsx": "4.20.5",
     "typescript": "^5.0.0"
   },
