@@ -1,17 +1,17 @@
 {
   "name": "@toldyaonce/kx-langchain-agent-cli",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "CLI for local development and testing of KxGen LangChain agent",
-  "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "bin": {
     "kxagent": "./bin/kxagent.js"
   },
   "scripts": {
-    "build": "tsc --project ./tsconfig.json && chmod +x bin/kxagent.js",
+    "build": "tsc && chmod +x bin/kxagent.js",
+    "prepublishOnly": "npm run clean && npm run build",
     "dev": "tsc --watch",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf lib",
     "test": "jest",
     "lint": "eslint src --ext .ts"
   },
@@ -35,5 +35,14 @@
   },
   "engines": {
     "node": ">=20.0.0"
-  }
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "lib/**/*",
+    "src/**/*",
+    "bin/**/*",
+    "README.md"
+  ]
 }

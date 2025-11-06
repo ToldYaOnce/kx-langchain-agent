@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-release-router",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "SQS to EventBridge release router for delayed agent responses",
   "main": "dist/handler.js",
   "types": "dist/handler.d.ts",

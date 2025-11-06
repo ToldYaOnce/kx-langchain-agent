@@ -1,0 +1,225 @@
+{
+    "locations": {
+        "default": {
+            "name": "RockBox Fitness Coral Springs",
+            "address": "3360 NW 62nd Ave, Margate FL 33062",
+            "phone": "(954) 555-0123",
+            "website": "https://www.rockboxfitness.com",
+            "hours": {
+                "monday": { "open": "05:00", "close": "23:00", "is24Hours": false },
+                "tuesday": { "open": "05:00", "close": "23:00", "is24Hours": false },
+                "wednesday": { "open": "05:00", "close": "23:00", "is24Hours": false },
+                "thursday": { "open": "05:00", "close": "23:00", "is24Hours": false },
+                "friday": { "open": "05:00", "close": "22:00", "is24Hours": false },
+                "saturday": { "open": "07:00", "close": "19:00", "is24Hours": false },
+                "sunday": { "open": "07:00", "close": "19:00", "is24Hours": false },
+                "holidays": {
+                    "christmas": "closed",
+                    "thanksgiving": "07:00-14:00",
+                    "new_years": "07:00-19:00"
+                }
+            },
+            "timezone": "America/New_York",
+            "specialNotes": [
+                "Extended hours Monday-Thursday for your convenience",
+                "Weekend hours designed for family-friendly workouts",
+                "Holiday hours subject to change - call ahead"
+            ]
+        }
+    },
+    "pricing": {
+        "memberships": [
+            {
+                "id": "basic",
+                "name": "Basic Membership",
+                "price": 89.00,
+                "currency": "USD",
+                "billing": "monthly",
+                "features": [
+                    "Unlimited boxing classes",
+                    "Access to strength training area",
+                    "Locker room access",
+                    "Free initial fitness assessment",
+                    "WiFi"
+                ],
+                "restrictions": [
+                    "No guest privileges",
+                    "Classes must be booked 24hrs in advance"
+                ]
+            },
+            {
+                "id": "premium",
+                "name": "Premium Membership",
+                "price": 139.00,
+                "currency": "USD",
+                "billing": "monthly",
+                "features": [
+                    "Unlimited boxing classes",
+                    "Access to strength training area",
+                    "Bring a guest anytime",
+                    "Personal training sessions (2 per month)",
+                    "Nutrition consultation",
+                    "Recovery room access",
+                    "Priority class booking",
+                    "Free RockBox gear",
+                    "WiFi"
+                ],
+                "restrictions": [],
+                "popular": true
+            }
+        ],
+        "fees": [
+            {
+                "name": "Annual Fee",
+                "amount": 39.00,
+                "currency": "USD",
+                "frequency": "yearly",
+                "description": "Charged once per year on membership anniversary"
+            },
+            {
+                "name": "Startup Fee",
+                "amount": 1.00,
+                "currency": "USD",
+                "frequency": "one-time",
+                "description": "One-time fee when joining",
+                "promotions": {
+                    "waived_during_sales": true
+                }
+            }
+        ]
+    },
+    "promotions": {
+        "active_sales": [
+            {
+                "id": "new_year_special",
+                "name": "New Year, New You Special",
+                "description": "Join for just $1 down and no annual fee!",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-31",
+                "status": "active",
+                "benefits": [
+                    "$1 startup fee (normally $39)",
+                    "No annual fee for first year",
+                    "Free Planet Fitness t-shirt"
+                ],
+                "applies_to": ["classic", "black_card"],
+                "terms": [
+                    "Must sign 12-month commitment",
+                    "Valid for new members only",
+                    "Cannot be combined with other offers"
+                ]
+            },
+            {
+                "id": "summer_ready",
+                "name": "Summer Ready Sale",
+                "description": "Get beach body ready with our summer special!",
+                "start_date": "2024-05-01",
+                "end_date": "2024-06-30",
+                "status": "scheduled",
+                "benefits": [
+                    "50% off first month",
+                    "Free personal training session",
+                    "Waived startup fee"
+                ],
+                "applies_to": ["black_card"],
+                "terms": [
+                    "Must sign 6-month commitment",
+                    "Valid for new members only"
+                ]
+            }
+        ],
+        "seasonal_offers": [
+            {
+                "season": "back_to_school",
+                "months": [8, 9],
+                "discount": "Student discount: 15% off monthly fee",
+                "requirements": ["Valid student ID", "Minimum 3-month commitment"]
+            },
+            {
+                "season": "holiday_special",
+                "months": [11, 12],
+                "discount": "Gift memberships available with bonus month",
+                "requirements": ["Prepaid annual membership"]
+            }
+        ]
+    },
+    "services": {
+        "personal_training": {
+            "available": true,
+            "pricing": {
+                "single_session": 35.00,
+                "package_4": 120.00,
+                "package_8": 220.00
+            },
+            "booking": {
+                "advance_days": 7,
+                "cancellation_hours": 24
+            }
+        },
+        "group_classes": {
+            "available": true,
+            "types": [
+                "RockBox Boxing (45-minute HIIT boxing)",
+                "Strength & Conditioning",
+                "Recovery & Stretch",
+                "Beginner Boxing Fundamentals"
+            ],
+            "cost": "Included with membership",
+            "booking_required": true,
+            "advance_booking": "24 hours"
+        },
+        "amenities": {
+            "recovery_room": {
+                "available_with": ["premium"],
+                "cost": "Included",
+                "booking_required": true,
+                "session_length": "30 minutes",
+                "features": ["Percussion therapy", "Stretching area", "Foam rollers"]
+            },
+            "boxing_equipment": {
+                "available_with": ["basic", "premium"],
+                "cost": "Included",
+                "items": ["Heavy bags", "Speed bags", "Boxing gloves", "Hand wraps"],
+                "booking_required": false
+            },
+            "personal_lockers": {
+                "available_with": ["premium"],
+                "cost": "Included",
+                "booking_required": false,
+                "features": ["Full-size lockers", "Towel service"]
+            }
+        }
+    },
+    "policies": {
+        "cancellation": {
+            "notice_required": "30 days written notice",
+            "methods": ["In-person", "Certified mail"],
+            "fees": "No cancellation fee after minimum commitment"
+        },
+        "freeze": {
+            "available": true,
+            "max_duration": "3 months per year",
+            "cost": 5.00,
+            "reasons": ["Medical", "Travel", "Financial hardship"]
+        },
+        "guest_policy": {
+            "basic": "No guest privileges",
+            "premium": "Anytime, must be 18+, same guest max 4x per month, guest waiver required"
+        }
+    },
+    "contact": {
+        "customer_service": "(954) 555-0123",
+        "hours": "Monday-Friday 6AM-10PM EST",
+        "email": "info@rockboxfitness.com",
+        "chat": {
+            "available": false,
+            "hours": "Call or visit in person for assistance"
+        }
+    },
+    "metadata": {
+        "last_updated": "2024-01-15T10:00:00Z",
+        "version": "1.0.0",
+        "effective_date": "2024-01-01",
+        "next_review": "2024-04-01"
+    }
+}

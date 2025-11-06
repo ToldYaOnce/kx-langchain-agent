@@ -11,6 +11,30 @@ echo "📦 Bumping runtime version..."
 npm version patch --no-git-tag-version
 npm install --no-package-lock
 npm run build
+
+# Verify build output
+echo "✅ Verifying build output..."
+if [ ! -d "lib" ] || [ ! -f "lib/index.js" ] || [ ! -f "lib/index.d.ts" ]; then
+    echo "❌ Build verification failed - missing expected output files"
+    exit 1
+fi
+
+# Test that the package can be loaded
+node -e "
+try {
+    const pkg = require('./lib/index.js');
+    const exports = Object.keys(pkg);
+    console.log('✅ Package exports verified:', exports.length, 'exports found');
+    if (exports.length === 0) {
+        console.error('❌ No exports found in package');
+        process.exit(1);
+    }
+} catch (error) {
+    console.error('❌ Package loading failed:', error.message);
+    process.exit(1);
+}
+"
+
 npm publish --registry https://npm.pkg.github.com
 cd ../..
 
@@ -29,6 +53,14 @@ sed -i.bak 's/"@toldyaonce\/kx-langchain-agent-runtime": "workspace:\^"/"@toldya
 echo "@toldyaonce:registry=https://npm.pkg.github.com" > .npmrc
 npm install --no-package-lock
 npm run build
+
+# Verify build output
+echo "✅ Verifying IaC build output..."
+if [ ! -d "lib" ] || [ ! -f "lib/index.js" ] || [ ! -f "lib/index.d.ts" ]; then
+    echo "❌ IaC build verification failed - missing expected output files"
+    exit 1
+fi
+
 npm publish --registry https://npm.pkg.github.com
 # Restore original package.json and clean up
 mv package.json.bak package.json
@@ -46,6 +78,14 @@ sed -i.bak 's/"@toldyaonce\/kx-langchain-agent-runtime": "workspace:\^"/"@toldya
 echo "@toldyaonce:registry=https://npm.pkg.github.com" > .npmrc
 npm install --no-package-lock
 npm run build
+
+# Verify build output
+echo "✅ Verifying CLI build output..."
+if [ ! -d "lib" ] || [ ! -f "lib/index.js" ] || [ ! -f "lib/index.d.ts" ]; then
+    echo "❌ CLI build verification failed - missing expected output files"
+    exit 1
+fi
+
 npm publish --registry https://npm.pkg.github.com
 # Restore original package.json and clean up
 mv package.json.bak package.json
