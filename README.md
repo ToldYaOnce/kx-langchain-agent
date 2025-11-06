@@ -4,6 +4,27 @@ A comprehensive, production-ready AI agent framework built on LangChain with AWS
 
 ## 🚀 Quick Start
 
+### For Consumers (Integrating into Your App)
+
+**📋 [Complete Setup Guide](./CONSUMER_SETUP_GUIDE.md)** ← **Start Here!**
+
+```bash
+# 1. Install packages
+npm install @toldyaonce/kx-delayed-replies-infra @toldyaonce/kx-langchain-agent-runtime --registry https://npm.pkg.github.com
+
+# 2. Deploy with automatic API Gateway integration
+import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
+
+const agentStack = new DelayedRepliesStack(this, 'MyAgentStack', {
+  apiGatewayConfig: {
+    existingApi: yourExistingApi,
+    basePath: 'agent'
+  }
+});
+```
+
+### For Development & Testing
+
 ```bash
 # Install CLI globally
 npm install -g @toldyaonce/kx-langchain-agent-cli --registry https://npm.pkg.github.com
@@ -104,13 +125,50 @@ Intelligent goal management system:
 
 ## 🔌 Consumer Integration
 
+### 📋 Complete Setup Guide
+
+**👉 [CONSUMER_SETUP_GUIDE.md](./CONSUMER_SETUP_GUIDE.md)** - Step-by-step integration instructions
+
+### 🌐 Management API Endpoints
+
+The agent provides REST APIs for dynamic configuration:
+
+| Service | Base Path | Description |
+|---------|-----------|-------------|
+| **Company Info** | `/company-info` | Manage company details & intent configuration |
+| **Personas** | `/personas` | Create & manage AI personas |
+| **Company-Persona** | `/company-persona` | Get combined company + persona data |
+
+#### Key Endpoints:
+```bash
+# Company Management
+POST   /company-info/                    # Create company
+GET    /company-info/{tenantId}          # Get company info
+PATCH  /company-info/{tenantId}          # Update company
+
+# Persona Management  
+POST   /personas/                        # Create persona
+GET    /personas/{tenantId}              # List tenant personas
+GET    /personas/{tenantId}/{personaId}  # Get specific persona
+GET    /personas/{tenantId}/random       # Get random persona
+
+# Combined Data (Used by Agent)
+GET    /company-persona/{tenantId}/{personaId}  # Company + specific persona
+GET    /company-persona/{tenantId}              # Company + random persona
+```
+
 ### Quick Start for Consumers
 
-1. **Deploy the Agent Infrastructure**
-```bash
-# Deploy core agent + delayed responses
-cd packages/iac && npm run deploy
-cd packages/infra && npm run deploy
+1. **Deploy with Automatic API Integration**
+```typescript
+import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
+
+const agentStack = new DelayedRepliesStack(this, 'MyAgentStack', {
+  apiGatewayConfig: {
+    existingApi: yourExistingApi,  // Your existing API Gateway
+    basePath: 'agent'              // Optional: adds /agent prefix
+  }
+});
 ```
 
 2. **Set Up EventBridge Integration**

@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-delayed-replies-infra",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "CDK infrastructure for delayed agent replies system",
   "main": "lib/src/index.js",
   "types": "lib/src/index.d.ts",
