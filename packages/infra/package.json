@@ -2,8 +2,8 @@
   "name": "@toldyaonce/kx-delayed-replies-infra",
   "version": "1.0.4",
   "description": "CDK infrastructure for delayed agent replies system",
-  "main": "lib/src/index.js",
-  "types": "lib/src/index.d.ts",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "bin": {
     "delayed-replies-infra": "bin/app.js"
   },
@@ -44,5 +44,9 @@
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
-  }
+  },
+  "files": [
+    "lib/**/*",
+    "README.md"
+  ]
 }
