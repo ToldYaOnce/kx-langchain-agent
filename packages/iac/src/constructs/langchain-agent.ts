@@ -189,9 +189,14 @@ export class LangchainAgent extends Construct {
    * Find the runtime package path relative to this construct
    */
   private findRuntimePackagePath(): string {
-    // This assumes the IaC package is in packages/iac and runtime is in packages/runtime
-    // Adjust the path based on your actual monorepo structure
-    return path.resolve(__dirname, '../../../runtime');
+    // Use require.resolve to find the runtime package location
+    try {
+      const runtimePath = require.resolve('@toldyaonce/kx-langchain-agent-runtime');
+      return path.dirname(runtimePath);
+    } catch (error) {
+      // Fallback to relative path for development
+      return path.resolve(__dirname, '../../../runtime');
+    }
   }
   
   /**
