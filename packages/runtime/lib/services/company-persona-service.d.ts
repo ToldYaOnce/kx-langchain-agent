@@ -1,13 +1,11 @@
 import { CompanyInfo } from '../models/company-info.js';
 import { Persona } from '../models/personas.js';
-declare class Service<T> {
-    constructor(model: any, partitionKey: string, sortKey?: string);
-    create(event: any): Promise<any>;
-    get(event: any): Promise<any>;
-    update(event: any): Promise<any>;
-    delete(event: any): Promise<any>;
-    list(event: any): Promise<any>;
-    query(event: any): Promise<any>;
+export interface ChatMessage {
+    conversationId: string;
+    timestamp: number;
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    metadata?: any;
 }
 export interface CompanyPersonaResponse {
     tenantId: string;
@@ -21,13 +19,18 @@ export interface CompanyPersonaResponse {
         goalConfiguration: any;
         actionTags: any;
     };
+    chatHistory?: ChatMessage[];
 }
 /**
  * Service for retrieving combined Company + Persona data
  * Aggregates company information with persona configuration and interpolates templates
  */
-export declare class CompanyPersonaService extends Service<any> {
+export declare class CompanyPersonaService {
     constructor();
+    /**
+     * Load chat history from DynamoDB Messages table
+     */
+    loadChatHistory(channelId: string, limit?: number): Promise<ChatMessage[]>;
     /**
      * Get company info + specific persona
      */
@@ -41,4 +44,3 @@ export declare class CompanyPersonaService extends Service<any> {
      */
     private interpolatePersonaTemplates;
 }
-export {};

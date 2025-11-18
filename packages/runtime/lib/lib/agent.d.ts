@@ -10,6 +10,7 @@ export interface AgentServiceConfig extends RuntimeConfig {
     dynamoService?: DynamoDBService;
     eventBridgeService?: EventBridgeService;
     personaId?: string;
+    persona?: any;
     intentActionRegistry?: IntentActionRegistry;
     personaStorage?: PersonaStorage;
     companyInfo?: CompanyInfo;

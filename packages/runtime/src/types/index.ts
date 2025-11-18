@@ -27,6 +27,7 @@ export const ChatChannelContextSchema = z.object({
   clientId: z.string().optional(),
   userAgent: z.string().optional(),
   ipAddress: z.string().optional(),
+  connectionId: z.string().optional(),
 });
 
 export const ChannelContextSchema = z.object({
@@ -54,6 +55,9 @@ export const MessageItemSchema = z.object({
   attachments: z.array(z.string()).optional(), // S3 URIs
   meta: z.record(z.any()).optional(),
   conversation_id: z.string().optional(),
+  // Consumer table fields
+  targetKey: z.string().optional(), // channel#{channelId} or contact_pk
+  dateReceived: z.string().optional(), // ISO8601 timestamp
   // GSI attributes
   GSI1PK: z.string().optional(), // tenantId for recent messages
   GSI1SK: z.string().optional(), // ts
@@ -153,6 +157,12 @@ export interface AgentContext {
   channel_context?: ChannelContext;
   lead_id?: string;
   conversation_id?: string;
+  // Chat-specific fields for response emission
+  channelId?: string;
+  userId?: string; // Persona ID (the agent)
+  senderId?: string; // User ID (the human sender)
+  userName?: string;
+  connectionId?: string; // WebSocket connection ID for direct response routing
 }
 
 // Environment configuration

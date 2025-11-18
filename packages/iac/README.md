@@ -162,6 +162,131 @@ const stack = createLangchainAgentStack(app, 'KxGenAgent', {
 });
 ```
 
+## Cross-Environment Integration
+
+### Problem: Cross-Environment IAM Role References
+
+When using the LangchainAgent in different AWS environments (accounts/regions) or referencing it from other stacks, you may encounter this error:
+
+```
+ValidationError: Cannot use resource 'KxGenStack/LangchainAgent/AgentFunction/ServiceRole' in a cross-environment fashion, the resource's physical name must be explicit set or use `PhysicalName.GENERATE_IF_NEEDED`
+```
+
+### Solution: Use Physical Names and Stack Exports
+
+The `@toldyaonce/kx-langchain-agent-iac` package provides built-in support for cross-environment references through physical name extraction and CDK exports.
+
+#### Option 1: Use LangchainAgentStack (Recommended)
+
+The `LangchainAgentStack` automatically exports all physical names as CDK outputs:
+
+```typescript
+import { LangchainAgentStack } from '@toldyaonce/kx-langchain-agent-iac';
+
+// Deploy the agent stack
+const agentStack = new LangchainAgentStack(this, 'LangchainAgentStack', {
+  agentProps: {
+    eventBus: eventBusArn,
+    bedrockModelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+    existingTables: {
+      messagesTableName: 'my-messages-table',
+      leadsTableName: 'my-leads-table',
+    }
+  }
+});
+
+// The stack automatically exports these values:
+// - LangchainAgentStack-AgentRouterFunctionArn
+// - LangchainAgentStack-AgentFunctionArn  
+// - LangchainAgentStack-AgentRoleArn
+// - LangchainAgentStack-IndexerFunctionArn (if RAG enabled)
+// - etc.
+```
+
+#### Option 2: Extract Physical Names Programmatically
+
+```typescript
+import { LangchainAgent } from '@toldyaonce/kx-langchain-agent-iac';
+import { CfnOutput } from 'aws-cdk-lib';
+
+const agent = new LangchainAgent(this, 'LangchainAgent', {
+  eventBus,
+  bedrockModelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+});
+
+// Get all physical names for cross-environment references
+const physicalNames = agent.getPhysicalNames();
+
+// Create your own CDK outputs
+new CfnOutput(this, 'AgentFunctionArn', {
+  value: physicalNames.agentFunctionArn,
+  exportName: 'MyStack-AgentFunctionArn',
+});
+
+new CfnOutput(this, 'AgentRoleArn', {
+  value: physicalNames.agentRoleArn!,
+  exportName: 'MyStack-AgentRoleArn',
+});
+```
+
+#### Option 3: Import from Another Stack/Environment
+
+```typescript
+import { LangchainAgent } from '@toldyaonce/kx-langchain-agent-iac';
+import { Fn } from 'aws-cdk-lib';
+
+// Import ARNs from another stack's exports
+const agentFunctionArn = Fn.importValue('LangchainAgentStack-AgentFunctionArn');
+const agentRouterFunctionArn = Fn.importValue('LangchainAgentStack-AgentRouterFunctionArn');
+
+// Use the static import method
+const importedFunctions = LangchainAgent.importFromArns(this, 'ImportedAgent', {
+  agentRouterFunctionArn,
+  agentFunctionArn,
+  // indexerFunctionArn: optional
+});
+
+// Now you can reference these functions without cross-environment issues
+importedFunctions.agentFunction.grantInvoke(someOtherRole);
+```
+
+### Available Physical Names
+
+The `getPhysicalNames()` method returns:
+
+```typescript
+{
+  agentRouterFunctionArn: string;      // ARN of the router Lambda
+  agentRouterFunctionName: string;     // Name of the router Lambda  
+  agentRouterRoleArn?: string;         // ARN of the router IAM role
+  agentFunctionArn: string;            // ARN of the main agent Lambda
+  agentFunctionName: string;           // Name of the main agent Lambda
+  agentRoleArn?: string;               // ARN of the agent IAM role
+  indexerFunctionArn?: string;         // ARN of the indexer Lambda (if RAG enabled)
+  indexerFunctionName?: string;        // Name of the indexer Lambda (if RAG enabled)
+  indexerRoleArn?: string;             // ARN of the indexer IAM role (if RAG enabled)
+}
+```
+
+### Integration with DelayedRepliesStack
+
+When using with `@toldyaonce/kx-delayed-replies-infra`, make sure to install the runtime dependency:
+
+```bash
+npm install @toldyaonce/kx-langchain-agent-runtime @toldyaonce/kx-release-router --registry https://npm.pkg.github.com
+```
+
+Then reference the agent Lambda ARN:
+
+```typescript
+import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
+
+const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
+  eventBusName: 'my-event-bus',
+  existingAgentLambdaArn: physicalNames.agentFunctionArn, // Use the extracted ARN
+});
+```
+
 ## Constructs
 
 ### DynamoDBTables

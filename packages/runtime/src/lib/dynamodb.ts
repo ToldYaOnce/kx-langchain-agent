@@ -53,8 +53,16 @@ export class DynamoDBService {
    * Put a message item to the messages table
    */
   async putMessage(message: Omit<MessageItem, 'contact_pk' | 'ts' | 'GSI1PK' | 'GSI1SK' | 'GSI2PK' | 'GSI2SK'>): Promise<MessageItem> {
+    console.log('🔥 1.3.1 PUTMESSAGE START - v1.1.25 - received conversation_id:', message.conversation_id);
     const ts = DynamoDBService.generateTimestampSK();
     const contact_pk = DynamoDBService.createContactPK(message.tenantId, message.email_lc);
+    
+    // Support consumer's table schema with targetKey (channel-based)
+    const targetKey = message.conversation_id
+      ? `channel#${message.conversation_id}`
+      : contact_pk;
+
+    console.log('🔥 1.3.2 DYNAMODB SERVICE - targetKey:', targetKey, 'conversation_id:', message.conversation_id);
     
     const item: MessageItem = {
       tenantId: message.tenantId,
@@ -66,6 +74,8 @@ export class DynamoDBService {
       meta: message.meta,
       contact_pk,
       ts,
+      targetKey, // Add targetKey for consumer's messages table
+      dateReceived: new Date().toISOString(), // Add dateReceived for consumer's table
       GSI1PK: message.tenantId, // For recent messages per tenant
       GSI1SK: ts,
     };
@@ -90,6 +100,10 @@ export class DynamoDBService {
 
   /**
    * Query messages for a contact (tenantId + email_lc)
+   * 
+   * NOTE: This method supports both table schemas:
+   * 1. Legacy schema: contact_pk as partition key
+   * 2. Consumer schema: targetKey as partition key
    */
   async getMessageHistory(
     tenantId: string,
@@ -98,12 +112,37 @@ export class DynamoDBService {
       limit?: number;
       exclusiveStartKey?: Record<string, any>;
       scanIndexForward?: boolean;
+      conversationId?: string; // If provided, query using targetKey (consumer schema)
     } = {}
   ): Promise<{
     items: MessageItem[];
     lastEvaluatedKey?: Record<string, any>;
   }> {
+    // If conversation_id is provided, use consumer's targetKey schema
+    if (options.conversationId) {
+      const targetKey = `channel#${options.conversationId}`;
+      console.log(`🔍 Querying with targetKey schema: ${targetKey}`);
+      
+      const result = await this.client.send(new QueryCommand({
+        TableName: this.config.messagesTable,
+        KeyConditionExpression: 'targetKey = :targetKey',
+        ExpressionAttributeValues: {
+          ':targetKey': targetKey,
+        },
+        Limit: options.limit || this.config.historyLimit,
+        ExclusiveStartKey: options.exclusiveStartKey,
+        ScanIndexForward: options.scanIndexForward ?? false, // Most recent first
+      }));
+
+      return {
+        items: (result.Items || []) as MessageItem[],
+        lastEvaluatedKey: result.LastEvaluatedKey,
+      };
+    }
+    
+    // Otherwise, use legacy contact_pk schema
     const contact_pk = DynamoDBService.createContactPK(tenantId, emailLc);
+    console.log(`🔍 Querying with contact_pk schema: ${contact_pk}`);
     
     const result = await this.client.send(new QueryCommand({
       TableName: this.config.messagesTable,

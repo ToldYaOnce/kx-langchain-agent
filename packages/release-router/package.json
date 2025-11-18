@@ -1,10 +1,11 @@
 {
   "name": "@toldyaonce/kx-release-router",
-  "version": "1.0.6",
+  "version": "1.0.36",
   "description": "SQS to EventBridge release router for delayed agent responses",
   "main": "dist/handler.js",
   "types": "dist/handler.d.ts",
   "scripts": {
+    "refresh:deps": "npm rm @toldyaonce/kx-agent-core && npm i @toldyaonce/kx-agent-core@latest",
     "build": "tsc --project ./tsconfig.json",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -22,6 +23,7 @@
   "license": "MIT",
   "dependencies": {
     "@aws-sdk/client-eventbridge": "^3.450.0",
+    "@toldyaonce/kx-agent-core": "1.0.29",
     "aws-lambda": "^1.0.7"
   },
   "devDependencies": {
@@ -48,6 +50,12 @@
     ]
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
-  }
+    "registry": "https://npm.pkg.github.com/",
+    "access": "public"
+  },
+  "files": [
+    "dist/**/*",
+    "src/**/*",
+    "README.md"
+  ]
 }

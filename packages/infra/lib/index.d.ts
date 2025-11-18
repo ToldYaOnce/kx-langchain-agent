@@ -1,2 +1,2 @@
-export { DelayedRepliesStack } from './delayed-replies-stack';
-export type { DelayedRepliesStackProps } from './delayed-replies-stack';
+export { DelayedReplies, DelayedRepliesStack } from './delayed-replies-stack';
+export type { DelayedRepliesProps, DelayedRepliesStackProps } from './delayed-replies-stack';

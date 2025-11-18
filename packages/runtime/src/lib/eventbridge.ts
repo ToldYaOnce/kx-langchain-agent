@@ -34,6 +34,32 @@ export class EventBridgeService {
   }
 
   /**
+   * Publish a custom event to EventBridge
+   */
+  async publishCustomEvent(source: string, detailType: string, detail: any): Promise<void> {
+    const eventBusName = this.config.outboundEventBusName || this.config.outboundEventBusArn;
+    
+    if (!eventBusName) {
+      console.warn('No EventBridge bus configured, skipping event publication');
+      return;
+    }
+
+    try {
+      await this.client.send(new PutEventsCommand({
+        Entries: [{
+          Source: source,
+          DetailType: detailType,
+          Detail: JSON.stringify(detail),
+          EventBusName: eventBusName,
+        }],
+      }));
+    } catch (error) {
+      console.error('Failed to publish custom event to EventBridge:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Generic event publisher
    */
   private async publishEvent(event: AgentReplyEvent | AgentErrorEvent | AgentTraceEvent): Promise<void> {

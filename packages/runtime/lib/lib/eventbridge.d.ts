@@ -16,6 +16,10 @@ export declare class EventBridgeService {
      */
     publishAgentTrace(event: AgentTraceEvent): Promise<void>;
     /**
+     * Publish a custom event to EventBridge
+     */
+    publishCustomEvent(source: string, detailType: string, detail: any): Promise<void>;
+    /**
      * Generic event publisher
      */
     private publishEvent;

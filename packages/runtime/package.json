@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-langchain-agent-runtime",
-  "version": "1.0.29",
+  "version": "1.1.88",
   "description": "Lambda handlers and shared libraries for KxGen LangChain agent",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -20,7 +20,7 @@
     "@langchain/aws": "^0.1.0",
     "@langchain/core": "^0.3.0",
     "@langchain/openai": "^0.3.0",
-    "@toldyaonce/kx-cdk-lambda-utils": "1.33.0",
+    "@toldyaonce/kx-cdk-lambda-utils": "^1.33.0",
     "langchain": "^0.3.0",
     "ulid": "2.4.0",
     "zod": "^3.22.0"
@@ -40,7 +40,8 @@
     "node": ">=20.0.0"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://npm.pkg.github.com/",
+    "access": "public"
   },
   "files": [
     "lib/**/*",

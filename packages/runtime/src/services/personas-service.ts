@@ -1,82 +1,37 @@
 import { Persona } from '../models/personas.js';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
-// Placeholder decorators and utilities for @toldyaonce/kx-cdk-lambda-utils
-const ApiBasePath = (path: string) => (target: any) => target;
-const ApiMethod = (method: string, path?: string) => (target: any, propertyKey: string, descriptor: PropertyDescriptor) => descriptor;
+// Initialize DynamoDB client
+let docClient: DynamoDBDocumentClient;
 
-// Placeholder Service class
-class Service<T> {
-  constructor(model: any, partitionKey: string, sortKey?: string) {}
-  
-  async create(event: any): Promise<any> {
-    console.log('Service.create called with:', event.body);
-    return { success: true, message: 'Create method not implemented' };
+function getDocClient() {
+  if (!docClient) {
+    const dynamoClient = new DynamoDBClient({});
+    docClient = DynamoDBDocumentClient.from(dynamoClient);
   }
-  
-  async get(event: any): Promise<any> {
-    console.log('Service.get called with:', event.pathParameters);
-    return { success: true, message: 'Get method not implemented' };
-  }
-  
-  async update(event: any): Promise<any> {
-    console.log('Service.update called with:', event.body);
-    return { success: true, message: 'Update method not implemented' };
-  }
-  
-  async delete(event: any): Promise<any> {
-    console.log('Service.delete called with:', event.pathParameters);
-    return { success: true, message: 'Delete method not implemented' };
-  }
-  
-  async list(event: any): Promise<any> {
-    console.log('Service.list called');
-    return { success: true, data: [], message: 'List method not implemented' };
-  }
-  
-  async query(event: any): Promise<any> {
-    console.log('Service.query called with:', event.pathParameters);
-    return { success: true, data: [], message: 'Query method not implemented' };
-  }
+  return docClient;
 }
 
-// Placeholder getApiMethodHandlers
-function getApiMethodHandlers(service: any): Record<string, any> {
-  return {
-    handler: async (event: any) => {
-      console.log('Generic handler called with:', JSON.stringify(event, null, 2));
-      return {
-        statusCode: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
-        },
-        body: JSON.stringify({ 
-          success: true, 
-          message: 'Service method handlers not implemented - requires @toldyaonce/kx-cdk-lambda-utils' 
-        })
-      };
-    }
-  };
-}
+// Get table name from environment or fall back to class name
+const TABLE_NAME = process.env.PERSONAS_TABLE || Persona.name;
+
+console.log('🚀 PersonasService: Service instance created');
 
 /**
  * Service for managing Persona objects in DynamoDB
  * Provides CRUD operations for persona configurations
  */
-@ApiBasePath('/personas')
-export class PersonasService extends Service<Persona> {
+export class PersonasService {
   
   constructor() {
-    super(Persona, 'tenantId', 'personaId');
+    // Lightweight service - direct DynamoDB implementation
   }
 
   /**
    * Create a new persona
    */
-  @ApiMethod('POST', '/{tenantId}')
-  async create(event: any): Promise<any> {
+  async createPersona(event: any): Promise<any> {
     console.log('Persona create called', JSON.stringify(event.body));
     
     const corsHeaders = {
@@ -88,7 +43,18 @@ export class PersonasService extends Service<Persona> {
 
     try {
       const body = JSON.parse(event.body || '{}');
-      const { tenantId } = event.pathParameters;
+      const { tenantId } = event.pathParameters || {};
+      
+      if (!tenantId || !body.personaId) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            success: false,
+            message: 'tenantId and personaId are required'
+          })
+        };
+      }
       
       // Ensure tenantId is set from path
       body.tenantId = tenantId;
@@ -97,22 +63,27 @@ export class PersonasService extends Service<Persona> {
       body.createdAt = new Date().toISOString();
       body.updatedAt = new Date().toISOString();
       
-      const result = await super.create(event);
+      await getDocClient().send(new PutCommand({
+        TableName: TABLE_NAME,
+        Item: body
+      }));
       
       return {
         statusCode: 201,
         headers: corsHeaders,
-        body: JSON.stringify(result)
+        body: JSON.stringify({
+          success: true,
+          data: body
+        })
       };
     } catch (error: any) {
       console.error('Error creating persona:', error);
-      
       return {
-        statusCode: 400,
+        statusCode: 500,
         headers: corsHeaders,
         body: JSON.stringify({
           success: false,
-          message: 'Failed to create persona',
+          message: 'Error creating persona',
           error: error.message
         })
       };
@@ -122,8 +93,7 @@ export class PersonasService extends Service<Persona> {
   /**
    * Get persona by tenantId and personaId
    */
-  @ApiMethod('GET', '/{tenantId}/{personaId}')
-  async get(event: any): Promise<any> {
+  async getPersona(event: any): Promise<any> {
     console.log('Persona get called', JSON.stringify(event.pathParameters));
     
     const corsHeaders = {
@@ -134,22 +104,51 @@ export class PersonasService extends Service<Persona> {
     };
 
     try {
-      const result = await super.get(event);
+      const { tenantId, personaId } = event.pathParameters || {};
+      
+      if (!tenantId || !personaId) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            success: false,
+            message: 'tenantId and personaId are required'
+          })
+        };
+      }
+      
+      const result = await getDocClient().send(new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { tenantId, personaId }
+      }));
+      
+      if (!result.Item) {
+        return {
+          statusCode: 404,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            success: false,
+            message: 'Persona not found'
+          })
+        };
+      }
       
       return {
         statusCode: 200,
         headers: corsHeaders,
-        body: JSON.stringify(result)
+        body: JSON.stringify({
+          success: true,
+          data: result.Item
+        })
       };
     } catch (error: any) {
       console.error('Error getting persona:', error);
-      
       return {
-        statusCode: 404,
+        statusCode: 500,
         headers: corsHeaders,
         body: JSON.stringify({
           success: false,
-          message: 'Persona not found',
+          message: 'Error getting persona',
           error: error.message
         })
       };
@@ -159,8 +158,7 @@ export class PersonasService extends Service<Persona> {
   /**
    * Update persona
    */
-  @ApiMethod('PATCH', '/{tenantId}/{personaId}')
-  async update(event: any): Promise<any> {
+  async updatePersona(event: any): Promise<any> {
     console.log('Persona update called', JSON.stringify(event.body));
     
     const corsHeaders = {
@@ -172,31 +170,47 @@ export class PersonasService extends Service<Persona> {
 
     try {
       const body = JSON.parse(event.body || '{}');
-      const { tenantId, personaId } = event.pathParameters;
+      const { tenantId, personaId } = event.pathParameters || {};
       
-      // Ensure keys are set from path
+      if (!tenantId || !personaId) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            success: false,
+            message: 'tenantId and personaId are required'
+          })
+        };
+      }
+      
+      // Ensure keys are set
       body.tenantId = tenantId;
       body.personaId = personaId;
       
       // Update timestamp
       body.updatedAt = new Date().toISOString();
       
-      const result = await super.update(event);
+      await getDocClient().send(new PutCommand({
+        TableName: TABLE_NAME,
+        Item: body
+      }));
       
       return {
         statusCode: 200,
         headers: corsHeaders,
-        body: JSON.stringify(result)
+        body: JSON.stringify({
+          success: true,
+          data: body
+        })
       };
     } catch (error: any) {
       console.error('Error updating persona:', error);
-      
       return {
-        statusCode: 400,
+        statusCode: 500,
         headers: corsHeaders,
         body: JSON.stringify({
           success: false,
-          message: 'Failed to update persona',
+          message: 'Error updating persona',
           error: error.message
         })
       };
@@ -206,8 +220,7 @@ export class PersonasService extends Service<Persona> {
   /**
    * Delete persona
    */
-  @ApiMethod('DELETE', '/{tenantId}/{personaId}')
-  async delete(event: any): Promise<any> {
+  async deletePersona(event: any): Promise<any> {
     console.log('Persona delete called', JSON.stringify(event.pathParameters));
     
     const corsHeaders = {
@@ -218,60 +231,40 @@ export class PersonasService extends Service<Persona> {
     };
 
     try {
-      await super.delete(event);
+      const { tenantId, personaId } = event.pathParameters || {};
       
-      return {
-        statusCode: 204,
-        headers: corsHeaders,
-        body: ''
-      };
-    } catch (error: any) {
-      console.error('Error deleting persona:', error);
+      if (!tenantId || !personaId) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            success: false,
+            message: 'tenantId and personaId are required'
+          })
+        };
+      }
       
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({
-          success: false,
-          message: 'Failed to delete persona',
-          error: error.message
-        })
-      };
-    }
-  }
-
-  /**
-   * List personas for a tenant
-   */
-  @ApiMethod('GET', '/{tenantId}')
-  async listByTenant(event: any): Promise<any> {
-    console.log('Persona listByTenant called', JSON.stringify(event.pathParameters));
-    
-    const corsHeaders = {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
-    };
-
-    try {
-      // Use the base service's query method to get all personas for tenant
-      const result = await super.query(event);
+      await getDocClient().send(new DeleteCommand({
+        TableName: TABLE_NAME,
+        Key: { tenantId, personaId }
+      }));
       
       return {
         statusCode: 200,
         headers: corsHeaders,
-        body: JSON.stringify(result)
+        body: JSON.stringify({
+          success: true,
+          message: 'Persona deleted successfully'
+        })
       };
     } catch (error: any) {
-      console.error('Error listing personas:', error);
-      
+      console.error('Error deleting persona:', error);
       return {
         statusCode: 500,
         headers: corsHeaders,
         body: JSON.stringify({
           success: false,
-          message: 'Failed to list personas',
+          message: 'Error deleting persona',
           error: error.message
         })
       };
@@ -279,11 +272,10 @@ export class PersonasService extends Service<Persona> {
   }
 
   /**
-   * Get a random persona for a tenant (used when no specific persona is requested)
+   * List all personas for a tenant
    */
-  @ApiMethod('GET', '/{tenantId}/random')
-  async getRandomPersona(event: any): Promise<any> {
-    console.log('Persona getRandomPersona called', JSON.stringify(event.pathParameters));
+  async listPersonas(event: any): Promise<any> {
+    console.log('Persona list called', JSON.stringify(event.pathParameters));
     
     const corsHeaders = {
       'Content-Type': 'application/json',
@@ -293,10 +285,87 @@ export class PersonasService extends Service<Persona> {
     };
 
     try {
-      // Get all personas for tenant
-      const personas = await super.query(event);
+      const { tenantId } = event.pathParameters || {};
       
-      if (!personas || personas.length === 0) {
+      if (!tenantId) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            success: false,
+            message: 'tenantId is required'
+          })
+        };
+      }
+      
+      const result = await getDocClient().send(new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'tenantId = :tenantId',
+        ExpressionAttributeValues: {
+          ':tenantId': tenantId
+        }
+      }));
+      
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: true,
+          data: result.Items || []
+        })
+      };
+    } catch (error: any) {
+      console.error('Error listing personas:', error);
+      return {
+        statusCode: 500,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          success: false,
+          message: 'Error listing personas',
+          error: error.message
+        })
+      };
+    }
+  }
+
+  /**
+   * Get a random persona for a tenant
+   */
+  async getRandomPersona(event: any): Promise<any> {
+    console.log('Get random persona called', JSON.stringify(event.pathParameters));
+    
+    const corsHeaders = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+    };
+
+    try {
+      const { tenantId } = event.pathParameters || {};
+      
+      if (!tenantId) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            success: false,
+            message: 'tenantId is required'
+          })
+        };
+      }
+      
+      const result = await getDocClient().send(new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'tenantId = :tenantId',
+        ExpressionAttributeValues: {
+          ':tenantId': tenantId
+        }
+      }));
+      
+      const personas = result.Items || [];
+      
+      if (personas.length === 0) {
         return {
           statusCode: 404,
           headers: corsHeaders,
@@ -307,23 +376,24 @@ export class PersonasService extends Service<Persona> {
         };
       }
       
-      // Return a random persona
       const randomPersona = personas[Math.floor(Math.random() * personas.length)];
       
       return {
         statusCode: 200,
         headers: corsHeaders,
-        body: JSON.stringify(randomPersona)
+        body: JSON.stringify({
+          success: true,
+          data: randomPersona
+        })
       };
     } catch (error: any) {
       console.error('Error getting random persona:', error);
-      
       return {
         statusCode: 500,
         headers: corsHeaders,
         body: JSON.stringify({
           success: false,
-          message: 'Failed to get random persona',
+          message: 'Error getting random persona',
           error: error.message
         })
       };
@@ -331,8 +401,51 @@ export class PersonasService extends Service<Persona> {
   }
 }
 
-// Export the service and method handlers for Lambda integration
+// Create service instance
+const serviceInstance = new PersonasService();
+
+console.log('🚀 PersonasService: Handler exported');
+
+// Universal handler to route requests
+const handler = async (event: any) => {
+  console.log('🚀 PersonasService: Universal handler called with method:', event.httpMethod);
+  console.log('🚀 PersonasService: Path:', event.path);
+  console.log('🚀 PersonasService: Path parameters:', JSON.stringify(event.pathParameters));
+  
+  const method = event.httpMethod;
+  const { tenantId, personaId } = event.pathParameters || {};
+  const pathSegments = event.path?.split('/').filter(Boolean) || [];
+  const lastSegment = pathSegments[pathSegments.length - 1];
+  
+  // Route based on HTTP method and path
+  if (method === 'POST' && tenantId && !personaId) {
+    return serviceInstance.createPersona(event);
+  } else if (method === 'GET' && tenantId && personaId) {
+    return serviceInstance.getPersona(event);
+  } else if (method === 'PATCH' && tenantId && personaId) {
+    return serviceInstance.updatePersona(event);
+  } else if (method === 'DELETE' && tenantId && personaId) {
+    return serviceInstance.deletePersona(event);
+  } else if (method === 'GET' && tenantId && lastSegment === 'random') {
+    return serviceInstance.getRandomPersona(event);
+  } else if (method === 'GET' && tenantId && !personaId) {
+    return serviceInstance.listPersonas(event);
+  } else {
+    return {
+      statusCode: 501,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({
+        success: false,
+        message: `Method ${method} with path ${event.path} not implemented`
+      })
+    };
+  }
+};
+
 module.exports = {
   PersonasService,
-  ...getApiMethodHandlers(new PersonasService())
+  handler
 };

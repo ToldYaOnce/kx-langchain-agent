@@ -37,16 +37,19 @@ export declare const ChatChannelContextSchema: z.ZodObject<{
     clientId: z.ZodOptional<z.ZodString>;
     userAgent: z.ZodOptional<z.ZodString>;
     ipAddress: z.ZodOptional<z.ZodString>;
+    connectionId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     sessionId: string;
     clientId?: string | undefined;
     userAgent?: string | undefined;
     ipAddress?: string | undefined;
+    connectionId?: string | undefined;
 }, {
     sessionId: string;
     clientId?: string | undefined;
     userAgent?: string | undefined;
     ipAddress?: string | undefined;
+    connectionId?: string | undefined;
 }>;
 export declare const ChannelContextSchema: z.ZodObject<{
     sms: z.ZodOptional<z.ZodObject<{
@@ -83,16 +86,19 @@ export declare const ChannelContextSchema: z.ZodObject<{
         clientId: z.ZodOptional<z.ZodString>;
         userAgent: z.ZodOptional<z.ZodString>;
         ipAddress: z.ZodOptional<z.ZodString>;
+        connectionId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         sessionId: string;
         clientId?: string | undefined;
         userAgent?: string | undefined;
         ipAddress?: string | undefined;
+        connectionId?: string | undefined;
     }, {
         sessionId: string;
         clientId?: string | undefined;
         userAgent?: string | undefined;
         ipAddress?: string | undefined;
+        connectionId?: string | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
     sms?: {
@@ -111,6 +117,7 @@ export declare const ChannelContextSchema: z.ZodObject<{
         clientId?: string | undefined;
         userAgent?: string | undefined;
         ipAddress?: string | undefined;
+        connectionId?: string | undefined;
     } | undefined;
 }, {
     sms?: {
@@ -129,6 +136,7 @@ export declare const ChannelContextSchema: z.ZodObject<{
         clientId?: string | undefined;
         userAgent?: string | undefined;
         ipAddress?: string | undefined;
+        connectionId?: string | undefined;
     } | undefined;
 }>;
 export type SmsChannelContext = z.infer<typeof SmsChannelContextSchema>;
@@ -178,16 +186,19 @@ export declare const MessageItemSchema: z.ZodObject<{
             clientId: z.ZodOptional<z.ZodString>;
             userAgent: z.ZodOptional<z.ZodString>;
             ipAddress: z.ZodOptional<z.ZodString>;
+            connectionId: z.ZodOptional<z.ZodString>;
         }, "strip", z.ZodTypeAny, {
             sessionId: string;
             clientId?: string | undefined;
             userAgent?: string | undefined;
             ipAddress?: string | undefined;
+            connectionId?: string | undefined;
         }, {
             sessionId: string;
             clientId?: string | undefined;
             userAgent?: string | undefined;
             ipAddress?: string | undefined;
+            connectionId?: string | undefined;
         }>>;
     }, "strip", z.ZodTypeAny, {
         sms?: {
@@ -206,6 +217,7 @@ export declare const MessageItemSchema: z.ZodObject<{
             clientId?: string | undefined;
             userAgent?: string | undefined;
             ipAddress?: string | undefined;
+            connectionId?: string | undefined;
         } | undefined;
     }, {
         sms?: {
@@ -224,12 +236,15 @@ export declare const MessageItemSchema: z.ZodObject<{
             clientId?: string | undefined;
             userAgent?: string | undefined;
             ipAddress?: string | undefined;
+            connectionId?: string | undefined;
         } | undefined;
     }>>;
     text: z.ZodString;
     attachments: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
     meta: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
     conversation_id: z.ZodOptional<z.ZodString>;
+    targetKey: z.ZodOptional<z.ZodString>;
+    dateReceived: z.ZodOptional<z.ZodString>;
     GSI1PK: z.ZodOptional<z.ZodString>;
     GSI1SK: z.ZodOptional<z.ZodString>;
     GSI2PK: z.ZodOptional<z.ZodString>;
@@ -260,11 +275,14 @@ export declare const MessageItemSchema: z.ZodObject<{
             clientId?: string | undefined;
             userAgent?: string | undefined;
             ipAddress?: string | undefined;
+            connectionId?: string | undefined;
         } | undefined;
     } | undefined;
     attachments?: string[] | undefined;
     meta?: Record<string, any> | undefined;
     conversation_id?: string | undefined;
+    targetKey?: string | undefined;
+    dateReceived?: string | undefined;
     GSI1PK?: string | undefined;
     GSI1SK?: string | undefined;
     GSI2PK?: string | undefined;
@@ -295,11 +313,14 @@ export declare const MessageItemSchema: z.ZodObject<{
             clientId?: string | undefined;
             userAgent?: string | undefined;
             ipAddress?: string | undefined;
+            connectionId?: string | undefined;
         } | undefined;
     } | undefined;
     attachments?: string[] | undefined;
     meta?: Record<string, any> | undefined;
     conversation_id?: string | undefined;
+    targetKey?: string | undefined;
+    dateReceived?: string | undefined;
     GSI1PK?: string | undefined;
     GSI1SK?: string | undefined;
     GSI2PK?: string | undefined;
@@ -389,16 +410,19 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 clientId: z.ZodOptional<z.ZodString>;
                 userAgent: z.ZodOptional<z.ZodString>;
                 ipAddress: z.ZodOptional<z.ZodString>;
+                connectionId: z.ZodOptional<z.ZodString>;
             }, "strip", z.ZodTypeAny, {
                 sessionId: string;
                 clientId?: string | undefined;
                 userAgent?: string | undefined;
                 ipAddress?: string | undefined;
+                connectionId?: string | undefined;
             }, {
                 sessionId: string;
                 clientId?: string | undefined;
                 userAgent?: string | undefined;
                 ipAddress?: string | undefined;
+                connectionId?: string | undefined;
             }>>;
         }, "strip", z.ZodTypeAny, {
             sms?: {
@@ -417,6 +441,7 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 clientId?: string | undefined;
                 userAgent?: string | undefined;
                 ipAddress?: string | undefined;
+                connectionId?: string | undefined;
             } | undefined;
         }, {
             sms?: {
@@ -435,6 +460,7 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 clientId?: string | undefined;
                 userAgent?: string | undefined;
                 ipAddress?: string | undefined;
+                connectionId?: string | undefined;
             } | undefined;
         }>>;
     }, "strip", z.ZodTypeAny, {
@@ -464,6 +490,7 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 clientId?: string | undefined;
                 userAgent?: string | undefined;
                 ipAddress?: string | undefined;
+                connectionId?: string | undefined;
             } | undefined;
         } | undefined;
         conversation_id?: string | undefined;
@@ -496,6 +523,7 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 clientId?: string | undefined;
                 userAgent?: string | undefined;
                 ipAddress?: string | undefined;
+                connectionId?: string | undefined;
             } | undefined;
         } | undefined;
         conversation_id?: string | undefined;
@@ -532,6 +560,7 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 clientId?: string | undefined;
                 userAgent?: string | undefined;
                 ipAddress?: string | undefined;
+                connectionId?: string | undefined;
             } | undefined;
         } | undefined;
         conversation_id?: string | undefined;
@@ -568,6 +597,7 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 clientId?: string | undefined;
                 userAgent?: string | undefined;
                 ipAddress?: string | undefined;
+                connectionId?: string | undefined;
             } | undefined;
         } | undefined;
         conversation_id?: string | undefined;
@@ -808,6 +838,11 @@ export interface AgentContext {
     channel_context?: ChannelContext;
     lead_id?: string;
     conversation_id?: string;
+    channelId?: string;
+    userId?: string;
+    senderId?: string;
+    userName?: string;
+    connectionId?: string;
 }
 export interface RuntimeConfig {
     messagesTable: string;

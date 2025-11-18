@@ -86,6 +86,8 @@ export interface ChannelContext {
         userAgent?: string;
         /** IP address for security/analytics */
         ipAddress?: string;
+        /** WebSocket connection ID for direct message routing */
+        connectionId?: string;
     };
     /** API context */
     api?: {

@@ -21,6 +21,7 @@ export interface AgentServiceConfig extends RuntimeConfig {
   dynamoService?: DynamoDBService;
   eventBridgeService?: EventBridgeService;
   personaId?: string; // Agent persona to use (defaults to 'carlos')
+  persona?: any; // Pre-loaded persona object (skips persona loading if provided)
   intentActionRegistry?: IntentActionRegistry;
   personaStorage?: PersonaStorage;
   companyInfo?: CompanyInfo; // Company information for persona customization
@@ -89,7 +90,11 @@ export class AgentService {
       // Load persona for this tenant with company info substitution
       let currentPersona = this.persona;
       
-      if (this.personaService) {
+      // Use pre-loaded persona if provided (from handler)
+      if (this.config.persona) {
+        console.log(`👤 Using pre-loaded persona from config`);
+        currentPersona = this.config.persona as AgentPersona;
+      } else if (this.personaService) {
         try {
           currentPersona = await this.personaService.getPersona(
             context.tenantId, 
@@ -339,7 +344,8 @@ export class AgentService {
             lead_id: context.lead_id,
           },
         });
-        await chatHistory.addMessage(incomingMessage);
+        // Skip adding to DynamoDB - messaging service handles persistence
+        // await chatHistory.addMessage(incomingMessage);
 
         // Get conversation history from storage
         messages = this.config.dynamoService 
@@ -363,6 +369,7 @@ export class AgentService {
       });
       
       // Add existing messages to memory (excluding the current message we just added)
+      // Note: This adds to in-memory chat history for the LangChain conversation, NOT DynamoDB
       const historyMessages = messages.slice(0, -1); // Remove the current message we just added
       for (const msg of historyMessages) {
         await memory.chatHistory.addMessage(msg);
@@ -408,28 +415,26 @@ export class AgentService {
         }
       }
 
-      // Add AI response to history
-      // Add AI message to history (only for Lambda mode with persistent storage)
-      if (!existingHistory && this.config.dynamoService) {
-        // Only save to DynamoDB in Lambda mode
-        const sessionKey = `${context.tenantId}:${context.email_lc}:${context.conversation_id || 'default-session'}`;
-        const chatHistoryForSaving = new KxDynamoChatHistory({
-          tenantId: context.tenantId,
-          emailLc: context.email_lc,
-          dynamoService: this.config.dynamoService,
-          historyLimit: this.config.historyLimit,
-          conversationId: context.conversation_id,
-        });
-        
-        const aiMessage = new AIMessage({
-          content: response,
-          additional_kwargs: {
-            source: 'agent',
-            model: this.config.bedrockModelId,
-          },
-        });
-        await chatHistoryForSaving.addMessage(aiMessage);
-      }
+      // Skip saving AI response to DynamoDB - messaging service handles persistence via EventBridge
+      // if (!existingHistory && this.config.dynamoService) {
+      //   const sessionKey = `${context.tenantId}:${context.email_lc}:${context.conversation_id || 'default-session'}`;
+      //   const chatHistoryForSaving = new KxDynamoChatHistory({
+      //     tenantId: context.tenantId,
+      //     emailLc: context.email_lc,
+      //     dynamoService: this.config.dynamoService,
+      //     historyLimit: this.config.historyLimit,
+      //     conversationId: context.conversation_id,
+      //   });
+      //   
+      //   const aiMessage = new AIMessage({
+      //     content: response,
+      //     additional_kwargs: {
+      //       source: 'agent',
+      //       model: this.config.bedrockModelId,
+      //     },
+      //   });
+      //   await chatHistoryForSaving.addMessage(aiMessage);
+      // }
       // For CLI mode, the calling code will handle adding the response to history
 
       // Emit trace event
@@ -529,8 +534,21 @@ Assistant:`);
    * Get system prompt based on persona and context
    */
   private getSystemPrompt(context: AgentContext, persona: AgentPersona): string {
-    // Use the persona's system prompt as the primary instruction
-    return persona.systemPrompt;
+    // Start with the persona's system prompt
+    let systemPrompt = persona.systemPrompt;
+    
+    // ALWAYS append core agent behavior rules (non-configurable)
+    const coreRules = `
+
+CORE AGENT BEHAVIOR (ALWAYS FOLLOW):
+- Use your personality nickname frequently and incorporate your terminology naturally
+- Follow responseGuidelines for channel-specific behavior, contact collection, and conversation rules
+- Always check conversationRules.requireContactForDetails before sharing detailed information
+- Maintain your persona's voice and style consistently throughout the conversation`;
+    
+    systemPrompt += coreRules;
+    
+    return systemPrompt;
   }
 
   /**

@@ -138,6 +138,13 @@ export class LangchainAgent extends Construct {
       description: 'Routes inbound messages and invokes agent processing',
       entry: path.join(runtimePackagePath, 'src/handlers/router.ts'),
       handler: 'handler',
+      role: new iam.Role(this, 'AgentRouterRole', {
+        assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+        ],
+        roleName: `${id}-agent-router-role`, // Explicit physical name
+      }),
     });
     
     // Agent Function
@@ -149,6 +156,13 @@ export class LangchainAgent extends Construct {
       handler: 'handler',
       timeout: Duration.minutes(10), // Longer timeout for LLM processing
       memorySize: 1024, // More memory for LangChain
+      role: new iam.Role(this, 'AgentRole', {
+        assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+        ],
+        roleName: `${id}-agent-role`, // Explicit physical name
+      }),
     });
     
     // Optional Indexer Function for RAG
@@ -163,6 +177,13 @@ export class LangchainAgent extends Construct {
           ...commonEnv,
           OPENSEARCH_COLLECTION_ARN: props.opensearchCollectionArn,
         },
+        role: new iam.Role(this, 'IndexerRole', {
+          assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+          managedPolicies: [
+            iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+          ],
+          roleName: `${id}-indexer-role`, // Explicit physical name
+        }),
       });
     }
     
@@ -189,10 +210,10 @@ export class LangchainAgent extends Construct {
    * Find the runtime package path relative to this construct
    */
   private findRuntimePackagePath(): string {
-    // Use require.resolve to find the runtime package location
+    // Use require.resolve to find the runtime package root, then navigate to src/handlers
     try {
-      const runtimePath = require.resolve('@toldyaonce/kx-langchain-agent-runtime');
-      return path.dirname(runtimePath);
+      const packageJsonPath = require.resolve('@toldyaonce/kx-langchain-agent-runtime/package.json');
+      return path.dirname(packageJsonPath);
     } catch (error) {
       // Fallback to relative path for development
       return path.resolve(__dirname, '../../../runtime');
@@ -239,9 +260,9 @@ export class LangchainAgent extends Construct {
     
     // Apply permissions to functions
     [this.agentRouterFunction, this.agentFunction].forEach(fn => {
-      fn.addToRolePolicy(dynamoPolicy);
-      fn.addToRolePolicy(bedrockPolicy);
-      fn.addToRolePolicy(eventBridgePolicy);
+      fn.role!.addToPrincipalPolicy(dynamoPolicy);
+      fn.role!.addToPrincipalPolicy(bedrockPolicy);
+      fn.role!.addToPrincipalPolicy(eventBridgePolicy);
     });
     
     // OpenSearch permissions for indexer
@@ -255,9 +276,9 @@ export class LangchainAgent extends Construct {
         resources: [props.opensearchCollectionArn],
       });
       
-      this.indexerFunction.addToRolePolicy(opensearchPolicy);
-      this.indexerFunction.addToRolePolicy(dynamoPolicy);
-      this.indexerFunction.addToRolePolicy(eventBridgePolicy);
+      this.indexerFunction.role!.addToPrincipalPolicy(opensearchPolicy);
+      this.indexerFunction.role!.addToPrincipalPolicy(dynamoPolicy);
+      this.indexerFunction.role!.addToPrincipalPolicy(eventBridgePolicy);
     }
     
     // Lambda invoke permissions (for router to invoke agent)
@@ -268,7 +289,7 @@ export class LangchainAgent extends Construct {
    * Setup EventBridge rules to trigger Lambda functions
    */
   private setupEventBridgeRules(eventBus: events.IEventBus): void {
-    // Rule for inbound messages
+    // Rule for inbound messages (transformed format)
     new events.Rule(this, 'InboundMessageRule', {
       eventBus,
       description: 'Route inbound lead messages to agent router',
@@ -278,5 +299,68 @@ export class LangchainAgent extends Construct {
       },
       targets: [new targets.LambdaFunction(this.agentRouterFunction)],
     });
+
+    // // Rule for direct chat messages (for testing/compatibility)
+    // new events.Rule(this, 'ChatMessageRule', {
+    //   eventBus,
+    //   description: 'Route chat messages directly to agent router',
+    //   eventPattern: {
+    //     source: ['kx-event-tracking'],
+    //     detailType: ['chat.message'],
+    //     detail: {
+    //       $or: [
+    //         { isBot: [true] },
+    //         { channelType: ['lead'] },
+    //         { recipientType: ['bot'] }
+    //       ]
+    //     }
+    //   },
+    //   targets: [new targets.LambdaFunction(this.agentRouterFunction)],
+    // });
+
+    // Rule for chat.message.available from kx-notifications-messaging
+    new events.Rule(this, 'ChatMessageAvailableRule', {
+      eventBus,
+      description: 'Route chat.message.available events to agent router',
+      eventPattern: {
+        source: ['kx-notifications-messaging'],
+        detailType: ['chat.message.available']
+      },
+      targets: [new targets.LambdaFunction(this.agentRouterFunction)],
+    });
+  }
+
+  /**
+   * Get the physical names/ARNs for cross-environment references
+   */
+  public getPhysicalNames() {
+    return {
+      agentRouterFunctionArn: this.agentRouterFunction.functionArn,
+      agentRouterFunctionName: this.agentRouterFunction.functionName,
+      agentRouterRoleArn: this.agentRouterFunction.role?.roleArn,
+      agentFunctionArn: this.agentFunction.functionArn,
+      agentFunctionName: this.agentFunction.functionName,
+      agentRoleArn: this.agentFunction.role?.roleArn,
+      indexerFunctionArn: this.indexerFunction?.functionArn,
+      indexerFunctionName: this.indexerFunction?.functionName,
+      indexerRoleArn: this.indexerFunction?.role?.roleArn,
+    };
+  }
+
+  /**
+   * Static method to import Lambda functions from ARNs for cross-environment references
+   */
+  public static importFromArns(scope: Construct, id: string, arns: {
+    agentRouterFunctionArn: string;
+    agentFunctionArn: string;
+    indexerFunctionArn?: string;
+  }) {
+    return {
+      agentRouterFunction: lambda.Function.fromFunctionArn(scope, `${id}-AgentRouter`, arns.agentRouterFunctionArn),
+      agentFunction: lambda.Function.fromFunctionArn(scope, `${id}-Agent`, arns.agentFunctionArn),
+      indexerFunction: arns.indexerFunctionArn 
+        ? lambda.Function.fromFunctionArn(scope, `${id}-Indexer`, arns.indexerFunctionArn)
+        : undefined,
+    };
   }
 }

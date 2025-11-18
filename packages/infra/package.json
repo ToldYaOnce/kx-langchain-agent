@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-delayed-replies-infra",
-  "version": "1.0.6",
+  "version": "1.1.43",
   "description": "CDK infrastructure for delayed agent replies system",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -8,6 +8,7 @@
     "delayed-replies-infra": "bin/app.js"
   },
   "scripts": {
+    "refresh:deps": "npm rm @toldyaonce/kx-langchain-agent-runtime && npm i @toldyaonce/kx-langchain-agent-runtime@latest",
     "build": "tsc --project ./tsconfig.json",
     "watch": "tsc -w",
     "test": "jest",
@@ -26,7 +27,6 @@
   ],
   "author": "toldyaonce <dev@toldyaonce.com>",
   "license": "MIT",
-  "dependencies": {},
   "devDependencies": {
     "@types/jest": "^29.5.8",
     "@types/node": "^20.9.0",
@@ -46,10 +46,14 @@
     "testEnvironment": "node"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://npm.pkg.github.com/",
+    "access": "public"
   },
   "files": [
     "lib/**/*",
     "README.md"
-  ]
+  ],
+  "dependencies": {
+    "@toldyaonce/kx-langchain-agent-runtime": "1.1.88"
+  }
 }

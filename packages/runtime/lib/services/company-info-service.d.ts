@@ -1,18 +1,8 @@
-import { CompanyInfo } from '../models/company-info.js';
-declare class Service<T> {
-    constructor(model: any, partitionKey: string, sortKey?: string);
-    create(event: any): Promise<any>;
-    get(event: any): Promise<any>;
-    update(event: any): Promise<any>;
-    delete(event: any): Promise<any>;
-    list(event: any): Promise<any>;
-    query(event: any): Promise<any>;
-}
 /**
  * Service for managing CompanyInfo objects in DynamoDB
  * Provides CRUD operations for company information and intent capturing configuration
  */
-export declare class CompanyInfoService extends Service<CompanyInfo> {
+export declare class CompanyInfoService {
     constructor();
     /**
      * Create a new company info record
@@ -35,4 +25,3 @@ export declare class CompanyInfoService extends Service<CompanyInfo> {
      */
     list(event: any): Promise<any>;
 }
-export {};

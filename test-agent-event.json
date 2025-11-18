@@ -1,0 +1,25 @@
+{
+  "version": "0",
+  "id": "test-manual-event",
+  "detail-type": "chat.message",
+  "source": "kx-event-tracking",
+  "account": "100295395476",
+  "time": "2025-11-09T22:45:00Z",
+  "region": "us-east-1",
+  "resources": [],
+  "detail": {
+    "tenantId": "tenant_1757418497028_g9o6mnb4m",
+    "channelId": "e713d8ca-a6d4-4d34-8a65-2c54f749b6bc",
+    "userId": "1478d468-d0a1-70e4-ec4f-f380529a6265",
+    "userName": "David Glass",
+    "message": "Hi, David. How is your day?",
+    "messageId": "test-message-123",
+    "timestamp": "2025-11-09T22:45:00.000Z",
+    "connectionId": "test-connection",
+    "messageType": "text",
+    "isBot": true,
+    "claimed": false
+  }
+}
+
+

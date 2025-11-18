@@ -262,36 +262,54 @@ The Management API provides Lambda functions that attach to **your existing API 
 
 #### Option 1: Automatic Bootstrap (Recommended)
 
+**⚠️ Important: Use `DelayedReplies` construct within your existing stack to avoid cross-stack reference issues.**
+
 ```typescript
-import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
+import { DelayedReplies } from '@toldyaonce/kx-delayed-replies-infra';
 
-// Automatic integration - just 3 lines!
-const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
-  eventBusName: 'your-event-bus',
-  apiGatewayConfig: {
-    existingApi: yourExistingApi,  // RestApi from aws-cdk-lib/aws-apigateway
-    basePath: '/api'               // Optional prefix (default: '/')
+// In your existing CDK Stack (not as a separate stack)
+export class MyAppStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+
+    // Automatic integration - just 3 lines!
+    const delayedReplies = new DelayedReplies(this, 'DelayedReplies', {
+      eventBusName: 'your-event-bus',
+      apiGatewayConfig: {
+        existingApi: yourExistingApi,  // RestApi from aws-cdk-lib/aws-apigateway
+        basePath: 'agent'              // Optional prefix (default: 'agent')
+      }
+    });
+
+    // That's it! All endpoints are automatically created with CORS support
+    // No cross-stack reference issues since everything is in the same stack
   }
-});
-
-// That's it! All endpoints are automatically created with CORS support
+}
 ```
 
 #### Option 2: Manual Integration
 
 ```typescript
-import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
+import { DelayedReplies } from '@toldyaonce/kx-delayed-replies-infra';
 
-// Deploy the stack without automatic integration
-const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies', {
-  eventBusName: 'your-event-bus'
-});
+// In your existing CDK Stack
+export class MyAppStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
 
-// Manual attachment using helper method
-delayedReplies.attachToApiGateway(yourExistingApi, '/api');
+    // Deploy without automatic integration
+    const delayedReplies = new DelayedReplies(this, 'DelayedReplies', {
+      eventBusName: 'your-event-bus'
+    });
 
-// Or get function details for custom integration
-const managementFunctions = delayedReplies.getManagementApiFunctions();
+    // Manual attachment using helper method
+    delayedReplies.attachToApiGateway(yourExistingApi, 'agent');
+
+    // Or access individual functions for custom integration
+    const companyInfoFunction = delayedReplies.companyInfoFunction;
+    const personasFunction = delayedReplies.personasFunction;
+  }
+}
 ```
 
 📚 **[Complete Bootstrap Guide →](./MANAGEMENT_API_BOOTSTRAP_GUIDE.md)**
@@ -493,12 +511,14 @@ npm run deploy
 
 ```typescript
 // In your CDK stack
-import { DelayedRepliesStack } from '@toldyaonce/kx-delayed-replies-infra';
+import { DelayedReplies } from '@toldyaonce/kx-delayed-replies-infra';
 
-const delayedReplies = new DelayedRepliesStack(this, 'DelayedReplies');
+// Use as a construct within your existing stack
+const delayedReplies = new DelayedReplies(this, 'DelayedReplies');
 
-// Get Lambda function details
-const managementFunctions = delayedReplies.getManagementApiFunctions();
+// Access Lambda functions directly
+const companyInfoFunction = delayedReplies.companyInfoFunction;
+const personasFunction = delayedReplies.personasFunction;
 
 // Grant your API Gateway permission to invoke the functions
 delayedReplies.grantApiGatewayInvoke(yourExistingApiGateway.restApiArn);

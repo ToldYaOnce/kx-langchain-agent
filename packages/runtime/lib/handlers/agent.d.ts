@@ -5,6 +5,18 @@ import type { AgentContext, AgentResponse } from '../types/index.js';
  */
 export interface AgentInvocationEvent extends AgentContext {
     message_ts: string;
+    metadata?: {
+        originMarker?: string;
+        agentId?: string;
+        originalMessageId?: string;
+        senderType?: string;
+        userType?: string;
+        isAgentGenerated?: boolean;
+    };
+    senderType?: string;
+    userType?: string;
+    originMarker?: string;
+    isAgentGenerated?: boolean;
 }
 /**
  * Lambda handler for processing agent responses

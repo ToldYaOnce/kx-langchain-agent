@@ -1,65 +1,27 @@
 import { CompanyInfo } from '../models/company-info.js';
 import { Persona } from '../models/personas.js';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
-// Placeholder decorators and utilities for @toldyaonce/kx-cdk-lambda-utils
-const ApiBasePath = (path: string) => (target: any) => target;
-const ApiMethod = (method: string, path?: string) => (target: any, propertyKey: string, descriptor: PropertyDescriptor) => descriptor;
+// Initialize DynamoDB client for chat history
+let docClient: DynamoDBDocumentClient;
 
-// Placeholder Service class
-class Service<T> {
-  constructor(model: any, partitionKey: string, sortKey?: string) {}
-  
-  async create(event: any): Promise<any> {
-    console.log('Service.create called with:', event.body);
-    return { success: true, message: 'Create method not implemented' };
+function getDocClient() {
+  if (!docClient) {
+    const dynamoClient = new DynamoDBClient({});
+    docClient = DynamoDBDocumentClient.from(dynamoClient);
   }
-  
-  async get(event: any): Promise<any> {
-    console.log('Service.get called with:', event.pathParameters);
-    return { success: true, message: 'Get method not implemented' };
-  }
-  
-  async update(event: any): Promise<any> {
-    console.log('Service.update called with:', event.body);
-    return { success: true, message: 'Update method not implemented' };
-  }
-  
-  async delete(event: any): Promise<any> {
-    console.log('Service.delete called with:', event.pathParameters);
-    return { success: true, message: 'Delete method not implemented' };
-  }
-  
-  async list(event: any): Promise<any> {
-    console.log('Service.list called');
-    return { success: true, data: [], message: 'List method not implemented' };
-  }
-  
-  async query(event: any): Promise<any> {
-    console.log('Service.query called with:', event.pathParameters);
-    return { success: true, data: [], message: 'Query method not implemented' };
-  }
+  return docClient;
 }
 
-// Placeholder getApiMethodHandlers
-function getApiMethodHandlers(service: any): Record<string, any> {
-  return {
-    handler: async (event: any) => {
-      console.log('Generic handler called with:', JSON.stringify(event, null, 2));
-      return {
-        statusCode: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
-        },
-        body: JSON.stringify({ 
-          success: true, 
-          message: 'Service method handlers not implemented - requires @toldyaonce/kx-cdk-lambda-utils' 
-        })
-      };
-    }
-  };
+console.log('🚀 CompanyPersonaService: Service instance created');
+
+export interface ChatMessage {
+  conversationId: string;
+  timestamp: number;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  metadata?: any;
 }
 
 export interface CompanyPersonaResponse {
@@ -74,24 +36,78 @@ export interface CompanyPersonaResponse {
     goalConfiguration: any;
     actionTags: any;
   };
+  chatHistory?: ChatMessage[];
 }
 
 /**
  * Service for retrieving combined Company + Persona data
  * Aggregates company information with persona configuration and interpolates templates
  */
-@ApiBasePath('/company-persona')
-export class CompanyPersonaService extends Service<any> {
+export class CompanyPersonaService {
   
   constructor() {
-    // This service doesn't directly map to a single model
-    super(Object, 'tenantId');
+    // Lightweight service - returns placeholder data
+  }
+
+  /**
+   * Load chat history from DynamoDB Messages table
+   */
+  async loadChatHistory(channelId: string, limit: number = 50): Promise<ChatMessage[]> {
+    const chatHistoryTable = process.env.CHAT_HISTORY_TABLE;
+    
+    if (!chatHistoryTable) {
+      console.warn('CHAT_HISTORY_TABLE not configured, skipping chat history load');
+      return [];
+    }
+
+    try {
+      console.log(`Loading chat history for channel: ${channelId}`);
+      
+      const result = await getDocClient().send(new QueryCommand({
+        TableName: chatHistoryTable,
+        KeyConditionExpression: 'targetKey = :targetKey',
+        ExpressionAttributeValues: {
+          ':targetKey': `channel#${channelId}`
+        },
+        ScanIndexForward: true, // Oldest first (sorted by dateReceived)
+        Limit: limit
+      }));
+
+      const messages = (result.Items || []).map(item => {
+        // Determine role based on sender
+        let role: 'user' | 'assistant' | 'system' = 'user';
+        if (item.senderId === item.metadata?.personaId || item.metadata?.isBot) {
+          role = 'assistant';
+        } else if (item.metadata?.role === 'system') {
+          role = 'system';
+        }
+        
+        return {
+          conversationId: channelId,
+          timestamp: new Date(item.dateReceived || item.createdAt).getTime(),
+          role,
+          content: item.content,
+          metadata: {
+            ...item.metadata,
+            senderId: item.senderId,
+            messageId: item.messageId,
+            messageType: item.messageType
+          }
+        };
+      });
+
+      console.log(`Loaded ${messages.length} messages from channel ${channelId}`);
+      return messages;
+      
+    } catch (error: any) {
+      console.error('Error loading chat history:', error);
+      return []; // Don't fail the whole request if chat history fails
+    }
   }
 
   /**
    * Get company info + specific persona
    */
-  @ApiMethod('GET', '/{tenantId}/{personaId}')
   async getCompanyPersona(event: any): Promise<any> {
     console.log('CompanyPersona get called', JSON.stringify(event.pathParameters));
     
@@ -104,6 +120,13 @@ export class CompanyPersonaService extends Service<any> {
 
     try {
       const { tenantId, personaId } = event.pathParameters;
+      const channelId = event.queryStringParameters?.channelId;
+      
+      // Load chat history if channelId provided
+      let chatHistory: ChatMessage[] = [];
+      if (channelId) {
+        chatHistory = await this.loadChatHistory(channelId);
+      }
       
       // Create type-safe placeholder data
       const companyInfo: CompanyInfo = {
@@ -256,7 +279,8 @@ export class CompanyPersonaService extends Service<any> {
           responseChunking: persona.responseChunking,
           goalConfiguration: persona.goalConfiguration,
           actionTags: persona.actionTags
-        }
+        },
+        chatHistory
       };
       
       return {
@@ -282,7 +306,6 @@ export class CompanyPersonaService extends Service<any> {
   /**
    * Get company info + random persona
    */
-  @ApiMethod('GET', '/{tenantId}')
   async getCompanyRandomPersona(event: any): Promise<any> {
     console.log('CompanyPersona getRandomPersona called', JSON.stringify(event.pathParameters));
     
@@ -507,8 +530,38 @@ export class CompanyPersonaService extends Service<any> {
   }
 }
 
-// Export the service and method handlers for Lambda integration
-module.exports = {
-  CompanyPersonaService,
-  ...getApiMethodHandlers(new CompanyPersonaService())
+// Create service instance
+const serviceInstance = new CompanyPersonaService();
+
+console.log('🚀 CompanyPersonaService: Handler exported');
+
+// Universal handler that routes GET requests
+const handler = async (event: any) => {
+  console.log('🚀 CompanyPersonaService: Universal handler called with method:', event.httpMethod);
+  
+  const method = event.httpMethod;
+  
+  if (method === 'GET') {
+    return serviceInstance.getCompanyPersona(event);
+  } else {
+    return {
+      statusCode: 501,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({
+        success: false,
+        message: `Method ${method} not implemented`
+      })
+    };
+  }
 };
+
+const moduleExports = {
+  CompanyPersonaService,
+  handler
+};
+console.log('🚀 CompanyPersonaService: Final exports:', Object.keys(moduleExports));
+
+module.exports = moduleExports;

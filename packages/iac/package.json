@@ -1,15 +1,16 @@
 {
   "name": "@toldyaonce/kx-langchain-agent-iac",
-  "version": "1.0.22",
+  "version": "1.0.79",
   "description": "CDK constructs and stacks for KxGen LangChain agent",
-  "main": "lib/index.js",
-  "types": "lib/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "add:utils": "npm rm @toldyaonce/kx-cdk-constructs && npm i @toldyaonce/kx-cdk-constructs@latest",
+    "refresh:deps": "npm rm @toldyaonce/kx-langchain-agent-runtime && npm i @toldyaonce/kx-langchain-agent-runtime@latest",
     "build": "tsc",
     "prepublishOnly": "npm run clean && npm run build",
     "dev": "tsc --watch",
-    "clean": "rm -rf lib",
+    "clean": "rm -rf dist",
     "test": "jest",
     "lint": "eslint src --ext .ts",
     "synth": "cdk synth",
@@ -17,8 +18,8 @@
     "diff": "cdk diff"
   },
   "dependencies": {
-    "@toldyaonce/kx-cdk-constructs": "1.42.0",
-    "@toldyaonce/kx-langchain-agent-runtime": "^1.0.0"
+    "@toldyaonce/kx-cdk-constructs": "^1.42.0",
+    "@toldyaonce/kx-langchain-agent-runtime": "1.1.77"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
@@ -41,10 +42,11 @@
     "node": ">=20.0.0"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://npm.pkg.github.com/",
+    "access": "public"
   },
   "files": [
-    "lib/**/*",
+    "dist/**/*",
     "README.md"
   ]
 }

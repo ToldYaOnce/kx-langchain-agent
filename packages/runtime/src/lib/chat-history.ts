@@ -42,18 +42,41 @@ export class KxDynamoChatHistory extends BaseChatMessageHistory {
       {
         limit: this.historyLimit,
         scanIndexForward: true, // Chronological order for LangChain
+        conversationId: this.conversationId, // Pass conversation_id for targetKey queries
       }
     );
 
-    return items
-      .filter(item => {
-        // Filter by conversation if specified
-        if (this.conversationId && item.conversation_id !== this.conversationId) {
-          return false;
+    console.log(`📚 BEFORE filter: ${items.length} items`);
+    console.log(`📚 First item keys: ${JSON.stringify(Object.keys(items[0] || {}))}`);
+    console.log(`📚 First item sample: ${JSON.stringify(items[0] || {}).substring(0, 200)}`);
+
+    const filtered = items.filter(item => {
+      // Filter by conversation if specified (for backwards compatibility with old schema)
+      // Note: When using targetKey queries, this filter is redundant since we already queried by channel
+      if (this.conversationId && item.conversation_id && item.conversation_id !== this.conversationId) {
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`📚 AFTER filter: ${filtered.length} items`);
+
+    const messages = filtered
+      .map(item => this.messageItemToLangChainMessage(item))
+      .filter(message => {
+        // Filter out empty SystemMessages (used as placeholders for messages without content)
+        const isEmpty = message instanceof SystemMessage && message.content === '';
+        if (isEmpty) {
+          console.log(`📚 Filtering out empty SystemMessage`);
         }
-        return true;
-      })
-      .map(item => this.messageItemToLangChainMessage(item));
+        return !isEmpty;
+      });
+
+    console.log(`📚 AFTER map and filter: ${messages.length} messages`);
+    console.log(`📚 First message type: ${messages[0]?.constructor.name}`);
+    console.log(`📚 First message content: ${JSON.stringify(messages[0]?.content).substring(0, 100)}`);
+
+    return messages;
   }
 
   /**
@@ -92,10 +115,74 @@ export class KxDynamoChatHistory extends BaseChatMessageHistory {
    * Convert DynamoDB message item to LangChain message
    */
   private messageItemToLangChainMessage(item: MessageItem): BaseMessage {
-    const content = item.text;
+    // Support both 'text' (old schema) and 'content' (notifications schema)
+    const content = item.text || (item as any).content;
     
-    // Determine message type based on direction and source
+    console.log(`📚 messageItemToLangChainMessage - Processing item:`, {
+      hasContent: !!content,
+      hasSenderId: !!(item as any).senderId,
+      hasDirection: !!item.direction,
+      hasUserType: !!(item as any).userType,
+      hasSenderType: !!(item as any).senderType,
+      messageId: (item as any).messageId,
+      contentPreview: content?.substring(0, 50)
+    });
+    
+    // Skip messages without content
+    if (!content) {
+      console.warn(`⚠️ Message ${(item as any).messageId} has no content, skipping`);
+      return new SystemMessage({ content: '' }); // Return empty message to filter out later
+    }
+    
+    // Check if this is notifications schema (has senderId, userType, senderType)
+    const notificationItem = item as any;
+    const isNotificationsSchema = notificationItem.senderId && !item.direction;
+    
+    console.log(`📚 Schema detection:`, { isNotificationsSchema });
+    
+    if (isNotificationsSchema) {
+      // Notifications schema: determine message type by senderType/userType
+      const isAgent = notificationItem.userType === 'agent' || notificationItem.senderType === 'agent';
+      
+      console.log(`📚 Notifications schema detected:`, {
+        userType: notificationItem.userType,
+        senderType: notificationItem.senderType,
+        isAgent
+      });
+      
+      if (isAgent) {
+        console.log(`📚 Creating AIMessage`);
+        return new AIMessage({
+          content,
+          additional_kwargs: {
+            messageId: notificationItem.messageId,
+            senderId: notificationItem.senderId,
+            timestamp: notificationItem.dateReceived || notificationItem.createdAt,
+            channelId: notificationItem.channelId,
+          },
+        });
+      } else {
+        console.log(`📚 Creating HumanMessage from notifications schema`);
+        return new HumanMessage({
+          content,
+          additional_kwargs: {
+            messageId: notificationItem.messageId,
+            senderId: notificationItem.senderId,
+            timestamp: notificationItem.dateReceived || notificationItem.createdAt,
+            channelId: notificationItem.channelId,
+          },
+        });
+      }
+    }
+    
+    // Old schema: use direction field
+    console.log(`📚 Using old schema, checking direction:`, {
+      direction: item.direction,
+      source: item.source
+    });
+    
     if (item.direction === 'inbound') {
+      console.log(`📚 Creating HumanMessage from old schema (inbound)`);
       return new HumanMessage({
         content,
         additional_kwargs: {
@@ -106,6 +193,7 @@ export class KxDynamoChatHistory extends BaseChatMessageHistory {
         },
       });
     } else if (item.direction === 'outbound' && item.source === 'agent') {
+      console.log(`📚 Creating AIMessage from old schema (outbound + agent)`);
       return new AIMessage({
         content,
         additional_kwargs: {
@@ -115,6 +203,10 @@ export class KxDynamoChatHistory extends BaseChatMessageHistory {
         },
       });
     } else {
+      console.log(`📚 Creating SystemMessage from old schema (fallback)`, {
+        direction: item.direction,
+        source: item.source
+      });
       // For system messages or other types
       return new SystemMessage({
         content,

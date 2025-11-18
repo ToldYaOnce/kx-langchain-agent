@@ -1,0 +1,154 @@
+[1mdiff --git a/packages/runtime/src/handlers/agent.ts b/packages/runtime/src/handlers/agent.ts[m
+[1mindex eaeb300..54b0b0d 100644[m
+[1m--- a/packages/runtime/src/handlers/agent.ts[m
+[1m+++ b/packages/runtime/src/handlers/agent.ts[m
+[36m@@ -10,6 +10,11 @@[m [mimport type { AgentContext, AgentResponse } from '../types/index.js';[m
+  */[m
+ export interface AgentInvocationEvent extends AgentContext {[m
+   message_ts: string; // Timestamp of the message that triggered this[m
+[32m+[m[32m  metadata?: {[m[41m[m
+[32m+[m[32m    isAgentGenerated?: boolean;[m[41m[m
+[32m+[m[32m    agentId?: string;[m[41m[m
+[32m+[m[32m    originalMessageId?: string;[m[41m[m
+[32m+[m[32m  };[m[41m[m
+ }[m
+ [m
+ /**[m
+[36m@@ -53,23 +58,47 @@[m [mexport async function handler([m
+     [m
+     console.log(`Generated response: ${response.substring(0, 100)}...`);[m
+     [m
+[31m-    // Write agent response to messages table[m
+[31m-    const responseMessage = await dynamoService.putMessage({[m
+[31m-      tenantId: event.tenantId,[m
+[31m-      email_lc: event.email_lc,[m
+[31m-      lead_id: event.lead_id,[m
+[31m-      source: 'agent',[m
+[31m-      direction: 'outbound',[m
+[31m-      text: response,[m
+[31m-      conversation_id: event.conversation_id,[m
+[31m-      meta: {[m
+[31m-        model: config.bedrockModelId,[m
+[31m-        triggered_by_message: event.message_ts,[m
+[31m-        processed_at: new Date().toISOString(),[m
+[31m-      },[m
+[31m-    });[m
+[31m-    [m
+[31m-    console.log(`Stored agent response: ${responseMessage.contact_pk}/${responseMessage.ts}`);[m
+[32m+[m[32m    // Emit chat.message event for the agent's response[m[41m[m
+[32m+[m[32m    // This will be picked up by the messaging service for persistence and delivery[m[41m[m
+[32m+[m[32m    if (event.source === 'chat' && event.channelId && event.userId) {[m[41m[m
+[32m+[m[32m      if (event.metadata?.isAgentGenerated === true || event.userType === 'agent') {[m[41m[m
+[32m+[m[32m        console.log('Skipping chat.message emission because this event originated from the agent.');[m[41m[m
+[32m+[m[32m        return;[m[41m[m
+[32m+[m[32m      }[m[41m      [m
+[32m+[m[32m      console.log('Emitting chat.message event for agent response');[m[41m[m
+[32m+[m[32m      console.log(`Agent context: userId=${event.userId}, senderId=${event.senderId}, userName=${event.userName}`);[m[41m[m
+[32m+[m[41m      [m
+[32m+[m[32m      const chatMessageEvent = {[m[41m[m
+[32m+[m[32m        tenantId: event.tenantId,[m[41m[m
+[32m+[m[32m        channelId: event.channelId,[m[41m[m
+[32m+[m[32m        userId: event.userId, // Persona ID (the agent sending the message)[m[41m[m
+[32m+[m[32m        userName: event.userName || 'AI Assistant',[m[41m[m
+[32m+[m[32m        userType: 'agent', // Explicitly mark this as an agent message[m[41m[m
+[32m+[m[32m        message: response,[m[41m[m
+[32m+[m[32m        messageId: `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,[m[41m[m
+[32m+[m[32m        timestamp: new Date().toISOString(),[m[41m[m
+[32m+[m[32m        connectionId: event.connectionId || event.channel_context?.chat?.connectionId, // Use connectionId if available from the original user message[m[41m[m
+[32m+[m[32m        messageType: 'text',[m[41m[m
+[32m+[m[32m        senderId: event.userId, // For routing, senderId = agent (persona ID)[m[41m[m
+[32m+[m[32m        metadata: {[m[41m[m
+[32m+[m[32m          isAgentGenerated: true, // Mark this as an agent-generated message[m[41m[m
+[32m+[m[32m          agentId: event.userId,[m[41m[m
+[32m+[m[32m          originalMessageId: `agent-${Date.now()}`[m[41m[m
+[32m+[m[32m        }[m[41m[m
+[32m+[m[32m      };[m[41m[m
+[32m+[m[41m      [m
+[32m+[m[32m      console.log('Chat message event payload:', JSON.stringify(chatMessageEvent, null, 2));[m[41m[m
+[32m+[m[41m      [m
+[32m+[m[32m      await eventBridgeService.publishCustomEvent([m[41m[m
+[32m+[m[32m        'kx-event-tracking',[m[41m[m
+[32m+[m[32m        'chat.message',[m[41m[m
+[32m+[m[32m        chatMessageEvent[m[41m[m
+[32m+[m[32m      );[m[41m[m
+[32m+[m[41m      [m
+[32m+[m[32m      console.log('Chat message event emitted successfully');[m[41m[m
+[32m+[m[32m    } else {[m[41m[m
+[32m+[m[32m      console.log('Not a chat message, skipping chat.message emission');[m[41m[m
+[32m+[m[32m    }[m[41m[m
+     [m
+     // Determine preferred channel and routing[m
+     const preferredChannel = event.source; // Use originating channel[m
+[36m@@ -84,7 +113,7 @@[m [mexport async function handler([m
+       conversation_id: event.conversation_id,[m
+     }, preferredChannel);[m
+     [m
+[31m-    // Emit agent.reply.created event[m
+[32m+[m[32m    // Emit agent.reply.created event (for backwards compatibility/tracking)[m[41m[m
+     await eventBridgeService.publishAgentReply([m
+       EventBridgeService.createAgentReplyEvent([m
+         event.tenantId,[m
+[36m@@ -97,7 +126,7 @@[m [mexport async function handler([m
+           metadata: {[m
+             model: config.bedrockModelId,[m
+             triggered_by_message: event.message_ts,[m
+[31m-            response_message_ts: responseMessage.ts,[m
+[32m+[m[32m            response_timestamp: new Date().toISOString(),[m[41m[m
+             lead_id: event.lead_id,[m
+           },[m
+         }[m
+[36m@@ -192,27 +221,34 @@[m [mexport async function structuredHandler([m
+       console.log(`\x1b[31m   Actions: ${structuredResponse.intent.actions?.join(', ') || 'none'}\x1b[0m`);[m
+     }[m
+     [m
+[31m-    // Store the response in DynamoDB if successful[m
+[31m-    if (structuredResponse.success) {[m
+[31m-      const responseMessage = await dynamoService.putMessage({[m
+[31m-        tenantId: event.tenantId,[m
+[31m-        email_lc: event.email_lc,[m
+[31m-        lead_id: event.lead_id,[m
+[31m-        source: 'agent',[m
+[31m-        direction: 'outbound',[m
+[31m-        text: structuredResponse.message,[m
+[31m-        conversation_id: event.conversation_id,[m
+[31m-        meta: {[m
+[31m-          model: config.bedrockModelId,[m
+[31m-          triggered_by_message: event.message_ts,[m
+[31m-          processed_at: structuredResponse.metadata.timestamp,[m
+[31m-          intent_detected: structuredResponse.intent?.id,[m
+[31m-          intent_confidence: structuredResponse.intent?.confidence,[m
+[31m-          processing_time_ms: structuredResponse.metadata.processingTimeMs,[m
+[31m-        },[m
+[31m-      });[m
+[32m+[m[32m    // Emit chat.message event if this is a chat conversation[m[41m[m
+[32m+[m[32m    if (structuredResponse.success && event.source === 'chat' && event.channelId && event.userId) {[m[41m[m
+[32m+[m[32m      console.log('Emitting chat.message event for structured agent response');[m[41m[m
+[32m+[m[41m      [m
+[32m+[m[32m      await eventBridgeService.publishCustomEvent([m[41m[m
+[32m+[m[32m        'kx-event-tracking',[m[41m[m
+[32m+[m[32m        'chat.message',[m[41m[m
+[32m+[m[32m        {[m[41m[m
+[32m+[m[32m          tenantId: event.tenantId,[m[41m[m
+[32m+[m[32m          channelId: event.channelId,[m[41m[m
+[32m+[m[32m          userId: event.userId, // Persona ID (the agent)[m[41m[m
+[32m+[m[32m          userName: event.userName || 'AI Assistant',[m[41m[m
+[32m+[m[32m          userType: 'agent', // Mark as agent message[m[41m[m
+[32m+[m[32m          message: structuredResponse.message,[m[41m[m
+[32m+[m[32m          messageId: `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,[m[41m[m
+[32m+[m[32m          timestamp: structuredResponse.metadata.timestamp,[m[41m[m
+[32m+[m[32m          connectionId: event.connectionId || event.channel_context?.chat?.connectionId, // Use connectionId from original message[m[41m[m
+[32m+[m[32m          messageType: 'text',[m[41m[m
+[32m+[m[32m          senderId: event.userId, // For routing, senderId = agent (persona ID)[m[41m[m
+[32m+[m[32m          metadata: {[m[41m[m
+[32m+[m[32m            isAgentGenerated: true,[m[41m[m
+[32m+[m[32m            agentId: event.userId,[m[41m[m
+[32m+[m[32m            originalMessageId: `agent-${Date.now()}`[m[41m[m
+[32m+[m[32m          }[m[41m[m
+[32m+[m[32m        }[m[41m[m
+[32m+[m[32m      );[m[41m[m
+       [m
+[31m-      console.log(`Stored agent response: ${responseMessage.contact_pk}/${responseMessage.ts}`);[m
+[32m+[m[32m      console.log('Structured response chat.message event emitted');[m[41m[m
+     }[m
+     [m
+     return structuredResponse;[m

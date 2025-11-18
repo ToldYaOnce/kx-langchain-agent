@@ -21,11 +21,16 @@ export declare class DynamoDBService {
     putMessage(message: Omit<MessageItem, 'contact_pk' | 'ts' | 'GSI1PK' | 'GSI1SK' | 'GSI2PK' | 'GSI2SK'>): Promise<MessageItem>;
     /**
      * Query messages for a contact (tenantId + email_lc)
+     *
+     * NOTE: This method supports both table schemas:
+     * 1. Legacy schema: contact_pk as partition key
+     * 2. Consumer schema: targetKey as partition key
      */
     getMessageHistory(tenantId: string, emailLc: string, options?: {
         limit?: number;
         exclusiveStartKey?: Record<string, any>;
         scanIndexForward?: boolean;
+        conversationId?: string;
     }): Promise<{
         items: MessageItem[];
         lastEvaluatedKey?: Record<string, any>;
