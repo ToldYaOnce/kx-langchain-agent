@@ -12,7 +12,7 @@ export async function handler(
   event: EventBridgeEvent<string, any>,
   context: Context
 ): Promise<void> {
-  console.log('🔥 1.0 ROUTER HANDLER START - v1.1.89');
+  console.log('🔥 1.0 ROUTER HANDLER START - v1.3.7');
   console.log('AgentRouter received event:', JSON.stringify(event, null, 2));
   
   try {
@@ -102,32 +102,28 @@ export async function handler(
       let tenantId = chatDetail.tenantId || chatDetail.metadata?.tenantId;
       let personaName = 'AI Assistant'; // Default fallback
       
-      if (!tenantId && chatDetail.userId) {
-        console.log('🔥 1.2.2 Looking up tenantId from personaId:', chatDetail.userId);
+      // If we have tenantId, load the full persona to get the name
+      if (tenantId && chatDetail.userId) {
+        console.log('🔥 1.2.2 Loading persona name for tenantId:', tenantId, 'personaId:', chatDetail.userId);
         try {
-          // Query personas table - userId is the personaId
-          // We need to scan/query to find which tenant owns this persona
-          // For now, extract from the persona_pk pattern if it's stored as tenantId#personaId
-          // Or better - have your messaging system include tenantId in metadata!
-          
-          // TEMPORARY: Query personas table with GSI to find the persona
           const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
           const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
           const client = new DynamoDBClient({});
           const docClient = DynamoDBDocumentClient.from(client);
           
           const result = await docClient.send(new GetCommand({
-            TableName: config.personasTable || process.env.PERSONAS_TABLE,
+            TableName: config.personasTable || process.env.PERSONAS_TABLE || 'DelayedReplies-personas',
             Key: {
-              persona_pk: chatDetail.userId, // Assuming this is the full key
-              sk: 'CONFIG'
+              tenantId: tenantId,
+              personaId: chatDetail.userId
             }
           }));
           
           if (result.Item) {
-            tenantId = result.Item.tenantId;
-            personaName = result.Item.name || result.Item.persona_name || personaName;
-            console.log('🔥 1.2.3 Found tenantId:', tenantId, 'personaName:', personaName);
+            personaName = result.Item.name || personaName;
+            console.log('🔥 1.2.3 Found persona name:', personaName);
+          } else {
+            console.log('🔥 1.2.3 No persona found for tenantId:', tenantId, 'personaId:', chatDetail.userId);
           }
         } catch (error) {
           console.error('🔥 1.2.3 ERROR - Failed to lookup persona:', error);

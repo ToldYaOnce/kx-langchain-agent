@@ -54,11 +54,44 @@ export interface IntentCapturing {
         multipleIntentHandling: 'highest_confidence' | 'all' | 'first_match';
     };
 }
+/**
+ * Core personality trait scales (1-10)
+ * These are universal, cross-industry dimensions that define persona behavior
+ */
+export interface PersonalityTraits {
+    enthusiasm: number;
+    warmth: number;
+    professionalism: number;
+    assertiveness: number;
+    empathy: number;
+    humor: number;
+    confidence: number;
+    salesAggression: number;
+    verbosity: number;
+    technicality: number;
+    empathicEmotionality: number;
+    humorStyle: number;
+    responsePace?: number;
+    directness?: number;
+    riskAversion?: number;
+    brandedLanguageDensity?: number;
+    characterActing?: number;
+    emojiFrequency?: number;
+    formality?: number;
+    questionRatio?: number;
+    leadConversionDrive?: number;
+    supportiveness?: number;
+    educationDepth?: number;
+    personalizationLevel?: number;
+}
 export interface AgentPersona {
     name: string;
     description: string;
     systemPrompt: string;
-    personality: {
+    personalityTraits?: PersonalityTraits;
+    personalityQuirks?: string[];
+    /** @deprecated Use personalityTraits and personalityQuirks instead - kept for backward compatibility */
+    personality?: {
         tone: string;
         style: string;
         languageQuirks?: string[];

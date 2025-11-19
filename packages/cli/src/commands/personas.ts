@@ -44,8 +44,12 @@ export function createPersonasCommand(): Command {
         const personaService = new PersonaService(null); // null for DynamoDB service since we're using static personas
         const persona = await personaService.getPersona(options.persona, 'default-tenant');
         console.log(`🤖 ${persona.name}: ${persona.description}`);
-        console.log(`Tone: ${persona.personality.tone}`);
-        console.log(`Style: ${persona.personality.style}\n`);
+        if (persona.personality) {
+          console.log(`Tone: ${persona.personality.tone}`);
+          console.log(`Style: ${persona.personality.style}\n`);
+        } else if ((persona as any).personalityTraits) {
+          console.log(`Uses numeric personality traits\n`);
+        }
 
         // Create agent with persona (will use company info from JSON)
         const config = createTestConfig();
@@ -92,21 +96,42 @@ export function createPersonasCommand(): Command {
         console.log(`🎭 Persona: ${persona.name}\n`);
         console.log(`Description: ${persona.description}\n`);
         
-        console.log('Personality:');
-        console.log(`  Tone: ${persona.personality.tone}`);
-        console.log(`  Style: ${persona.personality.style}`);
-        
-        if (persona.personality.languageQuirks) {
-          console.log('\n  Language Quirks:');
-          persona.personality.languageQuirks.forEach(quirk => {
-            console.log(`    • ${quirk}`);
-          });
+        // Show personality (old format) or traits (new format)
+        if (persona.personality) {
+          console.log('Personality (Legacy):');
+          console.log(`  Tone: ${persona.personality.tone}`);
+          console.log(`  Style: ${persona.personality.style}`);
+          
+          if (persona.personality.languageQuirks) {
+            console.log('\n  Language Quirks:');
+            persona.personality.languageQuirks.forEach(quirk => {
+              console.log(`    • ${quirk}`);
+            });
+          }
+          
+          if (persona.personality.specialBehaviors) {
+            console.log('\n  Special Behaviors:');
+            persona.personality.specialBehaviors.forEach(behavior => {
+              console.log(`    • ${behavior}`);
+            });
+          }
         }
         
-        if (persona.personality.specialBehaviors) {
-          console.log('\n  Special Behaviors:');
-          persona.personality.specialBehaviors.forEach(behavior => {
-            console.log(`    • ${behavior}`);
+        // Show new personality traits if present
+        if ((persona as any).personalityTraits) {
+          console.log('\nPersonality Traits:');
+          const traits = (persona as any).personalityTraits;
+          console.log(`  Enthusiasm: ${traits.enthusiasm}/10`);
+          console.log(`  Warmth: ${traits.warmth}/10`);
+          console.log(`  Professionalism: ${traits.professionalism}/10`);
+          console.log(`  Sales Aggression: ${traits.salesAggression}/10`);
+        }
+        
+        // Show personality quirks if present
+        if ((persona as any).personalityQuirks) {
+          console.log('\nPersonality Quirks:');
+          (persona as any).personalityQuirks.forEach((quirk: string) => {
+            console.log(`  • ${quirk}`);
           });
         }
         

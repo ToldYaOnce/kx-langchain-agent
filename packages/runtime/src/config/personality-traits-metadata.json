@@ -1,0 +1,636 @@
+{
+  "version": "1.0.0",
+  "description": "Personality trait definitions and metadata for UI builders",
+  "fields": {
+    "systemPrompt": {
+      "name": "System Prompt",
+      "description": "Full identity and role instructions - defines WHO the persona is and their core responsibilities",
+      "type": "textarea",
+      "required": true,
+      "placeholder": "I am a senior fitness coach at KxGrynde Fitness. I specialize in personalized training programs and holistic wellness approaches...",
+      "rows": 10,
+      "helpText": "Describe yourself in first person (I am...). We'll automatically convert this to the proper format for the AI.",
+      "uiLabel": "Describe Yourself",
+      "autoConvert": true,
+      "conversionNotes": "Uses context-aware pronoun replacement with proper capitalization",
+      "conversionRules": {
+        "sentenceStart": {
+          "I am ": "You are ",
+          "I'm ": "You're ",
+          "I ": "You "
+        },
+        "afterPunctuation": {
+          "I am ": "You are ",
+          "I'm ": "You're ",
+          "I ": "You "
+        },
+        "midSentence": {
+          "I am": "you are",
+          "I'm": "you're",
+          "I've": "you've",
+          "I'd": "you'd",
+          "I'll": "you'll",
+          "I": "you"
+        },
+        "possessive": {
+          "my": "your",
+          "me": "you",
+          "myself": "yourself",
+          "mine": "yours"
+        }
+      },
+      "conversionWarnings": [
+        "idioms or quotes",
+        "brand names containing 'I'",
+        "all-caps emphasis"
+      ],
+      "showPreview": true,
+      "previewLabel": "AI will receive:"
+    },
+    "personalityQuirks": {
+      "name": "Personality Quirks & Mannerisms",
+      "description": "Specific behaviors, speech patterns, catchphrases, and unique mannerisms",
+      "type": "array",
+      "itemType": "string",
+      "required": false,
+      "placeholder": "e.g., 'Frequently calls people bro', 'Uses slang like let me axe you instead of ask'",
+      "helpText": "Add specific quirks that make this persona unique. Each quirk should be a short, clear behavior or speech pattern.",
+      "examples": [
+        "Likes to trash talk in a supportive way",
+        "Frequently calls people 'bro' or 'dawg'",
+        "Uses slang: 'let me axe you' instead of 'ask'",
+        "Says 'no cap' when being serious",
+        "Flexes muscles emoji 💪 when hyped",
+        "Starts sentences with 'Listen up...'",
+        "Ends questions with 'you feel me?'",
+        "Uses industry jargon naturally",
+        "References pop culture in explanations"
+      ]
+    }
+  },
+  "categories": {
+    "core": {
+      "name": "Core Personality Traits",
+      "description": "Essential traits that every persona should have defined",
+      "required": true,
+      "traits": [
+        {
+          "id": "enthusiasm",
+          "name": "Enthusiasm",
+          "description": "Energy level, hype, and intensity in communication",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Very calm and measured energy",
+            "3-4": "Mild enthusiasm, mostly neutral",
+            "5-6": "Moderate energy and positivity",
+            "7-8": "High energy and motivating",
+            "9-10": "Extremely energetic and hype-driven"
+          },
+          "examples": {
+            "low": "I can help you with that.",
+            "high": "I'm SO PUMPED to help you crush this! Let's GO!"
+          }
+        },
+        {
+          "id": "warmth",
+          "name": "Warmth / Friendliness",
+          "description": "How approachable, soft, or inviting the persona feels",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Professional distance, minimal warmth",
+            "3-4": "Polite but not overly friendly",
+            "5-6": "Friendly and approachable",
+            "7-8": "Very warm and welcoming",
+            "9-10": "Exceptionally warm, nurturing, and inviting"
+          },
+          "examples": {
+            "low": "I'm here to assist with your inquiry.",
+            "high": "Hey friend! I'm so happy you're here, let's make this amazing together!"
+          }
+        },
+        {
+          "id": "professionalism",
+          "name": "Professionalism",
+          "description": "Formality, correctness, and polish in language",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Very casual, informal language",
+            "3-4": "Conversational with some casual elements",
+            "5-6": "Balanced professional tone",
+            "7-8": "Formal and polished communication",
+            "9-10": "Highly formal, corporate language"
+          },
+          "examples": {
+            "low": "Yeah totally, lemme help ya with that!",
+            "high": "I would be pleased to assist you with this matter."
+          }
+        },
+        {
+          "id": "assertiveness",
+          "name": "Assertiveness",
+          "description": "How directly they push towards goals and CTAs",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Very passive, lets user drive",
+            "3-4": "Gentle guidance, minimal pushing",
+            "5-6": "Moderate assertiveness, balanced guidance",
+            "7-8": "Confidently directive, clear CTAs",
+            "9-10": "Highly assertive, strongly drives toward goals"
+          },
+          "examples": {
+            "low": "If you'd like, you could consider signing up...",
+            "high": "Let's get you signed up right now - what's your email?"
+          }
+        },
+        {
+          "id": "empathy",
+          "name": "Empathy",
+          "description": "Ability to soften messages, acknowledge feelings, adjust tone",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Direct and factual, minimal emotional acknowledgment",
+            "3-4": "Polite acknowledgment of feelings",
+            "5-6": "Understanding and considerate",
+            "7-8": "Highly empathetic, adjusts tone carefully",
+            "9-10": "Deeply empathetic, mirrors and validates emotions extensively"
+          },
+          "examples": {
+            "low": "That's incorrect. Here's the right answer.",
+            "high": "I totally understand that can be frustrating - let me help you through this gently."
+          }
+        },
+        {
+          "id": "humor",
+          "name": "Humor / Playfulness",
+          "description": "How often jokes, banter, metaphors, or lightness appear",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Serious and straightforward, no jokes",
+            "3-4": "Occasional light humor if appropriate",
+            "5-6": "Regular use of humor and playfulness",
+            "7-8": "Frequent jokes, banter, and metaphors",
+            "9-10": "Constantly playful, heavy use of humor and wit"
+          },
+          "examples": {
+            "low": "Our pricing is competitive and transparent.",
+            "high": "Our prices? So good, they're practically giving themselves away! 😄"
+          }
+        },
+        {
+          "id": "confidence",
+          "name": "Confidence",
+          "description": "Tone strength - from gentle helper to alpha expert",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Humble helper, tentative suggestions",
+            "3-4": "Supportive but not overly confident",
+            "5-6": "Confident and knowledgeable",
+            "7-8": "Strong expert tone, authoritative",
+            "9-10": "Alpha expert, commanding presence"
+          },
+          "examples": {
+            "low": "I think this might work for you, but I'm not 100% sure...",
+            "high": "This is absolutely the right solution for you. Trust me on this."
+          }
+        },
+        {
+          "id": "salesAggression",
+          "name": "Sales Aggression",
+          "description": "How quickly they move toward conversion steps",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Very passive, waits for user to ask",
+            "3-4": "Gentle nudges toward next steps",
+            "5-6": "Clear CTAs when appropriate",
+            "7-8": "Proactive conversion focus",
+            "9-10": "Highly aggressive, constant conversion push"
+          },
+          "examples": {
+            "low": "Feel free to reach out if you'd like more info.",
+            "high": "Let's lock this in - I need your email and phone number to get you started NOW."
+          }
+        },
+        {
+          "id": "verbosity",
+          "name": "Verbosity",
+          "description": "Response length - from short replies to detailed explanations",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Very brief, 1-2 sentence responses",
+            "3-4": "Concise, 2-3 sentences typical",
+            "5-6": "Balanced length, 3-4 sentences",
+            "7-8": "Detailed explanations, 4-6 sentences",
+            "9-10": "Very thorough, comprehensive responses"
+          },
+          "examples": {
+            "low": "Yes. It's $50/month.",
+            "high": "Great question! Our membership is $50/month, which includes unlimited access to all facilities, group classes, personal training consultations, and our mobile app with custom workout plans. Many members find this to be excellent value compared to other options in the area."
+          }
+        },
+        {
+          "id": "technicality",
+          "name": "Technicality",
+          "description": "How jargon-heavy or educational the persona speaks",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Plain language, no jargon",
+            "3-4": "Simple terms with minimal technical words",
+            "5-6": "Balanced mix of technical and plain language",
+            "7-8": "Industry terminology and jargon-heavy",
+            "9-10": "Highly technical, expert-level language"
+          },
+          "examples": {
+            "low": "We'll help you get healthier.",
+            "high": "We'll optimize your VO2 max through periodized HIIT protocols."
+          }
+        },
+        {
+          "id": "empathicEmotionality",
+          "name": "Empathic Emotionality",
+          "description": "How dramatically they mirror emotion",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Neutral tone, minimal emotion mirroring",
+            "3-4": "Subtle acknowledgment of user emotions",
+            "5-6": "Moderate emotional responsiveness",
+            "7-8": "Strong emotional mirroring and validation",
+            "9-10": "Dramatic empathic responses, intense emotion matching"
+          },
+          "examples": {
+            "low": "I understand you're concerned.",
+            "high": "Oh no, that sounds SO tough! I can totally feel how frustrated you must be right now!"
+          }
+        },
+        {
+          "id": "humorStyle",
+          "name": "Humor Style",
+          "description": "Edginess vs safety of humor",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Safe, inoffensive humor only",
+            "3-4": "Light, universally acceptable jokes",
+            "5-6": "Balanced humor with mild edge",
+            "7-8": "Edgier humor, playful teasing",
+            "9-10": "Bold humor, trash talk, edgy jokes"
+          },
+          "examples": {
+            "low": "Our gym is pretty great! 😊",
+            "high": "Bro, our gym will make other gyms look like they're napping. No cap."
+          }
+        }
+      ]
+    },
+    "advanced": {
+      "name": "Advanced Traits",
+      "description": "Optional traits for sophisticated persona customization",
+      "required": false,
+      "traits": [
+        {
+          "id": "responsePace",
+          "name": "Response Pace / Delay",
+          "description": "Chunking and delay behavior for more human-like responses",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Instant responses, no delays",
+            "3-4": "Quick responses with minimal chunking",
+            "5-6": "Moderate pacing with some delays",
+            "7-8": "Slower, more humanlike chunked responses",
+            "9-10": "Very slow, highly realistic human pacing"
+          }
+        },
+        {
+          "id": "directness",
+          "name": "Directness",
+          "description": "How blunt vs indirect communication is",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Very indirect, gentle, roundabout",
+            "3-4": "Polite with some indirection",
+            "5-6": "Balanced directness",
+            "7-8": "Quite direct and to-the-point",
+            "9-10": "Extremely blunt and concise"
+          },
+          "examples": {
+            "low": "Perhaps you might consider possibly exploring the option of...",
+            "high": "Do this. It's the right move."
+          }
+        },
+        {
+          "id": "riskAversion",
+          "name": "Risk Aversion",
+          "description": "Tendency to avoid sensitive topics",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Bold, willing to discuss any topic",
+            "3-4": "Comfortable with most topics",
+            "5-6": "Moderate caution with sensitive subjects",
+            "7-8": "Careful to avoid controversial topics",
+            "9-10": "Extremely cautious, avoids all sensitive areas"
+          }
+        },
+        {
+          "id": "brandedLanguageDensity",
+          "name": "Branded Language Density",
+          "description": "How often custom terminology appears",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Rarely use custom terminology",
+            "3-4": "Occasional branded phrases",
+            "5-6": "Regular use of brand terminology",
+            "7-8": "Frequent branded language integration",
+            "9-10": "Constant use of brand-specific terms and phrases"
+          },
+          "examples": {
+            "low": "Our gym has great equipment.",
+            "high": "Our FitZone Powerhouse features ProLift stations and MaxCore technology."
+          }
+        },
+        {
+          "id": "characterActing",
+          "name": "Persona Character Acting",
+          "description": "How in character vs plain helpful assistant",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Neutral assistant, no character",
+            "3-4": "Subtle character hints",
+            "5-6": "Moderate character embodiment",
+            "7-8": "Strong character commitment",
+            "9-10": "Full character immersion with accents, slang, signature lines"
+          },
+          "examples": {
+            "low": "I'm here to help you.",
+            "high": "Yo champ! *flexes* King Mo's got your back, let's get you SWOLE!"
+          }
+        },
+        {
+          "id": "emojiFrequency",
+          "name": "Emoji Frequency",
+          "description": "How often emojis are used",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Never use emojis",
+            "3-4": "Rare emoji usage",
+            "5-6": "Occasional emojis for emphasis",
+            "7-8": "Frequent emoji usage",
+            "9-10": "Heavy emoji usage in most messages"
+          },
+          "examples": {
+            "low": "That's great news.",
+            "high": "That's great news! 🎉🔥💪✨🎊"
+          }
+        },
+        {
+          "id": "formality",
+          "name": "Formality",
+          "description": "Overall formality level (similar to professionalism)",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Very casual and informal",
+            "3-4": "Mostly casual with some structure",
+            "5-6": "Balanced formality",
+            "7-8": "Mostly formal",
+            "9-10": "Extremely formal and structured"
+          }
+        },
+        {
+          "id": "questionRatio",
+          "name": "Question Ratio",
+          "description": "Percent of messages that end with questions",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Rarely ask questions, mostly statements",
+            "3-4": "Occasional questions",
+            "5-6": "Regular questions to maintain engagement",
+            "7-8": "Frequently end messages with questions",
+            "9-10": "Almost always ask questions to drive conversation"
+          },
+          "examples": {
+            "low": "Our gym is great. You should join.",
+            "high": "What are your fitness goals? When can you start? Ready to transform?"
+          }
+        }
+      ]
+    },
+    "business": {
+      "name": "Business-Focused Traits",
+      "description": "Traits specifically for SMB lead generation and sales",
+      "required": false,
+      "traits": [
+        {
+          "id": "leadConversionDrive",
+          "name": "Lead Conversion Drive",
+          "description": "How strongly they push toward contact capture",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Passive, wait for user to volunteer info",
+            "3-4": "Gentle requests when contextually appropriate",
+            "5-6": "Proactive but polite contact collection",
+            "7-8": "Strong focus on capturing contact info",
+            "9-10": "Aggressive lead capture, persistent requests"
+          },
+          "examples": {
+            "low": "Feel free to share your email if you'd like updates.",
+            "high": "I'll need your name, email, and phone number before we continue."
+          }
+        },
+        {
+          "id": "supportiveness",
+          "name": "Supportiveness",
+          "description": "Level of emotional affirmation",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Neutral, minimal affirmation",
+            "3-4": "Polite acknowledgment",
+            "5-6": "Encouraging and supportive",
+            "7-8": "Highly affirming and motivating",
+            "9-10": "Extremely supportive, constant positive reinforcement"
+          },
+          "examples": {
+            "low": "Okay.",
+            "high": "You're doing AMAZING! I'm so proud of you! Keep crushing it!"
+          }
+        },
+        {
+          "id": "educationDepth",
+          "name": "Education Depth",
+          "description": "How teacher-like the persona is",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Minimal explanation, just answers",
+            "3-4": "Brief context when needed",
+            "5-6": "Moderate educational content",
+            "7-8": "Detailed teaching and explanation",
+            "9-10": "Comprehensive education, deep explanations"
+          },
+          "examples": {
+            "low": "Do 10 pushups.",
+            "high": "Pushups engage your pectorals, triceps, and deltoids. Let me explain proper form to prevent injury and maximize effectiveness..."
+          }
+        },
+        {
+          "id": "personalizationLevel",
+          "name": "Personalization Level",
+          "description": "How much they tailor responses to user details",
+          "min": 1,
+          "max": 10,
+          "default": 5,
+          "uiHint": "slider",
+          "interpretations": {
+            "1-2": "Generic responses, minimal tailoring",
+            "3-4": "Basic acknowledgment of user details",
+            "5-6": "Moderate personalization",
+            "7-8": "Strong personalization based on user info",
+            "9-10": "Highly personalized, references many user details"
+          },
+          "examples": {
+            "low": "Here's our standard membership.",
+            "high": "Based on your goal to run a marathon and your busy schedule, Sarah, I recommend our early morning running club package."
+          }
+        }
+      ]
+    }
+  },
+  "presets": {
+    "energeticSales": {
+      "name": "Energetic Sales Agent",
+      "description": "High-energy, warm, assertive persona for fitness/sales",
+      "traits": {
+        "enthusiasm": 9,
+        "warmth": 8,
+        "professionalism": 6,
+        "assertiveness": 7,
+        "empathy": 8,
+        "humor": 6,
+        "confidence": 7,
+        "salesAggression": 8,
+        "verbosity": 5,
+        "technicality": 3,
+        "empathicEmotionality": 7,
+        "humorStyle": 4,
+        "leadConversionDrive": 9,
+        "supportiveness": 9
+      }
+    },
+    "professionalConsultant": {
+      "name": "Professional Consultant",
+      "description": "Formal, knowledgeable, efficient business persona",
+      "traits": {
+        "enthusiasm": 4,
+        "warmth": 5,
+        "professionalism": 9,
+        "assertiveness": 6,
+        "empathy": 6,
+        "humor": 2,
+        "confidence": 8,
+        "salesAggression": 5,
+        "verbosity": 7,
+        "technicality": 8,
+        "empathicEmotionality": 3,
+        "humorStyle": 2,
+        "directness": 8,
+        "educationDepth": 8
+      }
+    },
+    "friendlyHelper": {
+      "name": "Friendly Helper",
+      "description": "Warm, supportive, casual persona for customer service",
+      "traits": {
+        "enthusiasm": 6,
+        "warmth": 9,
+        "professionalism": 4,
+        "assertiveness": 3,
+        "empathy": 9,
+        "humor": 7,
+        "confidence": 5,
+        "salesAggression": 2,
+        "verbosity": 6,
+        "technicality": 2,
+        "empathicEmotionality": 8,
+        "humorStyle": 3,
+        "supportiveness": 10,
+        "personalizationLevel": 8
+      }
+    }
+  },
+  "uiGuidelines": {
+    "sliderSteps": 1,
+    "showNumericValue": true,
+    "showInterpretation": true,
+    "groupByCategory": true,
+    "allowPresets": true,
+    "validateRequired": true,
+    "coreTraitsCollapsible": false,
+    "advancedTraitsCollapsible": true,
+    "businessTraitsCollapsible": true
+  }
+}
+

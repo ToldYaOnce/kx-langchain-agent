@@ -61,16 +61,57 @@ export interface IntentCapturing {
   };
 }
 
+/**
+ * Core personality trait scales (1-10)
+ * These are universal, cross-industry dimensions that define persona behavior
+ */
+export interface PersonalityTraits {
+  // CORE TRAITS (Essential - every persona should have these)
+  enthusiasm: number;              // Energy level, hype, intensity (1=low, 10=high)
+  warmth: number;                  // Approachability, friendliness (1=cold, 10=warm)
+  professionalism: number;         // Formality, correctness, polish (1=casual, 10=formal)
+  assertiveness: number;           // How directly they push towards goals (1=passive, 10=aggressive)
+  empathy: number;                 // Ability to acknowledge feelings, adjust tone (1=blunt, 10=nurturing)
+  humor: number;                   // Frequency of jokes, banter, metaphors (1=serious, 10=joking constantly)
+  confidence: number;              // Tone strength (1=gentle helper, 10=alpha expert)
+  salesAggression: number;         // Speed of moving toward conversion (1=passive, 10=aggressive)
+  verbosity: number;               // Response length (1=terse, 10=detailed explanations)
+  technicality: number;            // Jargon-heavy vs simple language (1=plain, 10=technical)
+  empathicEmotionality: number;    // How dramatically they mirror emotion (1=neutral, 10=dramatic)
+  humorStyle: number;              // Edginess vs safety of humor (1=safe, 10=edgy/trash talk)
+  
+  // ADVANCED TRAITS (Optional - for sophisticated users)
+  responsePace?: number;           // Chunking/delay behavior (1=instant, 10=slow/humanlike)
+  directness?: number;             // Communication style (1=indirect, 10=blunt)
+  riskAversion?: number;           // Tendency to avoid sensitive topics (1=bold, 10=cautious)
+  brandedLanguageDensity?: number; // Frequency of custom terminology (1=rare, 10=constant)
+  characterActing?: number;        // How "in character" vs plain assistant (1=neutral, 10=full character)
+  emojiFrequency?: number;         // Emoji usage (1=never, 10=every message)
+  formality?: number;              // Overall formality level (1=casual, 10=formal)
+  questionRatio?: number;          // Percent of messages ending with questions (1=low, 10=high)
+  
+  // BUSINESS-FOCUSED TRAITS (For SMBs)
+  leadConversionDrive?: number;    // How strongly they push for contact capture (1=passive, 10=aggressive)
+  supportiveness?: number;         // Level of emotional affirmation (1=neutral, 10=highly supportive)
+  educationDepth?: number;         // How teacher-like (1=minimal, 10=comprehensive)
+  personalizationLevel?: number;   // How much they tailor to user details (1=generic, 10=highly personalized)
+}
+
 export interface AgentPersona {
   name: string;
-  description: string;
-  systemPrompt: string;
-  personality: {
+  description: string; // Short internal metadata for UI search/browsing only
+  systemPrompt: string; // Full identity and role instructions sent to Claude
+  personalityTraits?: PersonalityTraits; // Numeric sliders (1-10) for personality dimensions
+  personalityQuirks?: string[]; // Specific behaviors, mannerisms, speech patterns (e.g., "Likes to trash talk", "Says 'bro' frequently")
+  
+  /** @deprecated Use personalityTraits and personalityQuirks instead - kept for backward compatibility */
+  personality?: {
     tone: string;
     style: string;
     languageQuirks?: string[];
     specialBehaviors?: string[];
   };
+  
   responseGuidelines: string[];
   greetings?: GreetingConfig;
   responseChunking?: ResponseChunking;

@@ -70,12 +70,9 @@ export class AgentService {
     // Persona will be loaded per-request with company info substitution
     this.persona = {} as AgentPersona; // Will be loaded per-request
     
-    this.model = new ChatBedrockConverse({
-      model: config.bedrockModelId,
-      region: config.awsRegion,
-      temperature: 0.7,
-      maxTokens: 1000,
-    });
+    // Model will be initialized per-request with verbosity-aware maxTokens and temperature
+    // DO NOT initialize here - wait until we have persona settings in processMessage()!
+    this.model = null as any; // Will be created in processMessage() with correct settings
   }
 
   /**
@@ -113,6 +110,91 @@ export class AgentService {
         const actionTagConfig = (currentPersona as any).actionTags as ActionTagConfig;
         this.actionTagProcessor = new ActionTagProcessor(actionTagConfig);
       }
+
+      // Configure model maxTokens based on verbosity trait
+      // Linear progression: start at 40, add 20 per level
+      const verbosity = (currentPersona as any)?.personalityTraits?.verbosity || 5;
+      let maxTokens: number;
+      let temperature: number;
+      
+      switch (verbosity) {
+        case 1:
+          maxTokens = 40;   // ~1 sentence
+          temperature = 0.3;
+          break;
+        case 2:
+          maxTokens = 60;   // ~1-2 sentences
+          temperature = 0.3;
+          break;
+        case 3:
+          maxTokens = 80;   // ~2 sentences
+          temperature = 0.4;
+          break;
+        case 4:
+          maxTokens = 100;  // ~2-3 sentences
+          temperature = 0.4;
+          break;
+        case 5:
+          maxTokens = 120;  // ~3 sentences
+          temperature = 0.5;
+          break;
+        case 6:
+          maxTokens = 140;  // ~3-4 sentences
+          temperature = 0.5;
+          break;
+        case 7:
+          maxTokens = 160;  // ~4 sentences
+          temperature = 0.6;
+          break;
+        case 8:
+          maxTokens = 180;  // ~4-5 sentences
+          temperature = 0.6;
+          break;
+        case 9:
+          maxTokens = 200;  // ~5-6 sentences
+          temperature = 0.7;
+          break;
+        case 10:
+          maxTokens = 220;  // ~6-7 sentences ("lecture mode")
+          temperature = 0.7;
+          break;
+        default:
+          maxTokens = 120;  // Default to 5
+          temperature = 0.5;
+      }
+      
+      // 👉 Decide if we'll add a question via second LLM call
+      const questionRatio = (currentPersona as any)?.personalityTraits?.questionRatio;
+      let shouldAddQuestion = false;
+      const QUESTION_TOKEN_RESERVE = 20; // Reserve 20 tokens for the follow-up question
+      
+      if (questionRatio !== undefined) {
+        const probability = questionRatio / 10;        // 1–10 → 0.1–1.0
+        const isAlwaysAsk = questionRatio >= 9;        // 9–10 = always enforce
+        shouldAddQuestion = isAlwaysAsk || Math.random() < probability;
+        
+        console.log(
+          `❓ Question behavior for this turn: ratio=${questionRatio}/10, ` +
+          `prob=${Math.round(probability * 100)}%, alwaysAsk=${isAlwaysAsk}, ` +
+          `willAddQuestion=${shouldAddQuestion}`
+        );
+        
+        // If we'll add a question, reserve 20 tokens from the main response
+        if (shouldAddQuestion) {
+          maxTokens = Math.max(30, maxTokens - QUESTION_TOKEN_RESERVE); // Don't go below 30
+          console.log(`❓ Reserved ${QUESTION_TOKEN_RESERVE} tokens for question, main response maxTokens reduced to ${maxTokens}`);
+        }
+      }
+      
+      console.log(`🎚️ Setting maxTokens=${maxTokens}, temperature=${temperature} based on verbosity=${verbosity}`);
+      
+      // Recreate model with verbosity-aware maxTokens and temperature
+      this.model = new ChatBedrockConverse({
+        model: this.config.bedrockModelId,
+        region: this.config.awsRegion,
+        temperature,
+        maxTokens,
+      } as any);
 
       // Run goal orchestration to manage lead qualification
       let goalResult: GoalOrchestrationResult | null = null;
@@ -393,6 +475,61 @@ export class AgentService {
         input: context.text,
       });
 
+      // Log response length for monitoring
+      const sentences = response.match(/[^.!?]+[.!?]+/g) || [response];
+      console.log(`📊 Claude generated: ${sentences.length} sentences (verbosity: ${verbosity}, maxTokens: ${maxTokens})`);
+
+      // 👉 SECOND LLM CALL: Generate follow-up question if needed
+      if (shouldAddQuestion) {
+        console.log(`❓ Generating follow-up question via second LLM call...`);
+        
+        try {
+          // Create a tiny model for question generation only
+          const questionModel = new ChatBedrockConverse({
+            model: this.config.bedrockModelId,
+            region: this.config.awsRegion,
+            temperature: 0.7, // More creative for questions
+            maxTokens: 20, // TINY - just enough for a question
+          } as any);
+          
+          // Build prompt: Generate ONLY a question, not a response
+          const questionPrompt = `Task: Generate ONLY a short follow-up question. Do not respond, explain, or add anything else. Just output the question.
+
+You are ${currentPersona.name}. You just said: "${response.trim()}"
+
+Generate ONE short follow-up question in the same language to keep the conversation flowing. Output ONLY the question text, nothing else:`;
+          
+          const questionResponse = await questionModel.invoke([
+            new HumanMessage(questionPrompt)
+          ]);
+          
+          // Extract question text from response
+          let question = '';
+          if (typeof questionResponse.content === 'string') {
+            question = questionResponse.content.trim();
+          } else if (Array.isArray(questionResponse.content)) {
+            question = questionResponse.content.map(c => {
+              if (typeof c === 'string') return c;
+              if (c && typeof c === 'object' && 'text' in c) return (c as any).text || '';
+              return '';
+            }).join('').trim();
+          }
+          
+          // Clean up - remove quotes if present
+          question = question.replace(/^["']|["']$/g, '').trim();
+          
+          console.log(`❓ Generated question: ${question}`);
+          
+          // Append question to main response
+          if (question) {
+            response = `${response} ${question}`;
+          }
+        } catch (error) {
+          console.error('❌ Failed to generate question:', error);
+          // Continue without question - don't block the response
+        }
+      }
+
       // Process action tags in the response
       response = this.actionTagProcessor.processActionTags(response);
 
@@ -534,19 +671,89 @@ Assistant:`);
    * Get system prompt based on persona and context
    */
   private getSystemPrompt(context: AgentContext, persona: AgentPersona): string {
-    // Start with the persona's system prompt
-    let systemPrompt = persona.systemPrompt;
+    // CRITICAL: Build verbosity constraint FIRST - this must be the TOP priority
+    const verbosity = (persona as any)?.personalityTraits?.verbosity || 5;
+    let verbosityRule = '';
+    if (verbosity <= 2) {
+      verbosityRule = '🚨 CRITICAL RESPONSE CONSTRAINT: EXTREMELY BRIEF - Maximum 1-2 sentences total. NO EXCEPTIONS. Get to the point immediately.\n\n';
+    } else if (verbosity <= 4) {
+      verbosityRule = '🚨 CRITICAL RESPONSE CONSTRAINT: CONCISE - Maximum 2-3 sentences total. Be direct and avoid rambling.\n\n';
+    } else if (verbosity <= 6) {
+      verbosityRule = '🚨 CRITICAL RESPONSE CONSTRAINT: BALANCED - Keep to 3-4 sentences maximum. Be thorough but not excessive.\n\n';
+    } else if (verbosity <= 8) {
+      verbosityRule = '📝 Response guideline: 4-6 sentences maximum. Provide explanations and context.\n\n';
+    } else {
+      verbosityRule = '📝 Response guideline: 6-10 sentences when needed. Be thorough and educational.\n\n';
+    }
+    
+    // Start with verbosity rule, THEN add persona's system prompt
+    let systemPrompt = verbosityRule + persona.systemPrompt;
+    
+    // Convert first-person to second-person if needed (allows users to write naturally)
+    const { PronounConverter } = require('./pronoun-converter.js');
+    if (PronounConverter.isFirstPerson(systemPrompt)) {
+      console.log('🔄 Converting system prompt from first-person to second-person');
+      systemPrompt = PronounConverter.firstToSecondPerson(systemPrompt);
+    }
+    
+    // If numeric personality traits are defined, inject them AFTER verbosity constraint
+    if ((persona as any).personalityTraits) {
+      const { PersonalityTraitsInterpreter } = require('./personality-traits-interpreter.js');
+      const traitsSection = PersonalityTraitsInterpreter.generatePromptSection((persona as any).personalityTraits);
+      systemPrompt += traitsSection;
+    }
+    
+    // If personality quirks are defined, inject them as specific behaviors
+    if ((persona as any).personalityQuirks && Array.isArray((persona as any).personalityQuirks) && (persona as any).personalityQuirks.length > 0) {
+      const quirksSection = `
+
+PERSONALITY QUIRKS & MANNERISMS:
+${(persona as any).personalityQuirks.map((quirk: string) => `- ${quirk}`).join('\n')}`;
+      systemPrompt += quirksSection;
+    }
     
     // ALWAYS append core agent behavior rules (non-configurable)
     const coreRules = `
 
 CORE AGENT BEHAVIOR (ALWAYS FOLLOW):
-- Use your personality nickname frequently and incorporate your terminology naturally
+- 🌍 ALWAYS respond in the SAME LANGUAGE the user is speaking. If they speak Spanish, you speak Spanish. If they speak English, you speak English. MATCH THEIR LANGUAGE EXACTLY.
+- Incorporate your terminology naturally
 - Follow responseGuidelines for channel-specific behavior, contact collection, and conversation rules
 - Always check conversationRules.requireContactForDetails before sharing detailed information
-- Maintain your persona's voice and style consistently throughout the conversation`;
+- Maintain your persona's voice and style consistently throughout the conversation
+- Never volunteer that you are an AI
+- Answer as a real team member of {{companyName}}, but if directly asked, say you're a virtual assistant
+- NEVER bring up that you are AI on your own. If directly asked, say you're a virtual assistant that works with the team at {{companyName}}`;
     
     systemPrompt += coreRules;
+    
+    // Enforce question behavior based on questionRatio
+    const questionRatio = (persona as any)?.personalityTraits?.questionRatio;
+    
+    // If ratio is high (9-10), ALWAYS require a question.
+    // Otherwise use probabilistic behavior.
+    if (questionRatio !== undefined) {
+      const probability = questionRatio / 10;
+      const isAlwaysAsk = questionRatio >= 9; // 9-10 = always ask
+      const shouldRequireQuestion = isAlwaysAsk || Math.random() < probability;
+      
+      if (shouldRequireQuestion) {
+        console.log(
+          `❓ Question enforced: ratio=${questionRatio}/10 (${Math.round(probability * 100)}%), alwaysAsk=${isAlwaysAsk}`
+        );
+        
+        systemPrompt += `
+
+IMPORTANT INSTRUCTION FOR THIS RESPONSE:
+You MUST end your response with a natural, contextual question that keeps the conversation engaging. 
+Make the question fit naturally with your personality and the conversation flow. 
+Match the language the user is speaking.`;
+      } else {
+        console.log(
+          `❓ Question optional this turn: ratio=${questionRatio}/10 (${Math.round(probability * 100)}%)`
+        );
+      }
+    }
     
     return systemPrompt;
   }

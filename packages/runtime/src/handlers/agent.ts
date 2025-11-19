@@ -204,37 +204,48 @@ export async function handler(
       // Import chunking utilities
       const { ResponseChunker } = await import('../lib/response-chunker.js');
       
-      // Simple chunking config for chat: 1-2 sentences per chunk
-      const chunkingConfig = {
-        enabled: true,
-        rules: {
-          chat: {
-            chunkBy: 'sentence' as const,
-            maxLength: 150, // ~1 sentence (force single sentence chunks)
-            delayBetweenChunks: 1000
-          },
-          sms: {
-            chunkBy: 'none' as const,
-            maxLength: -1,
-            delayBetweenChunks: 0
-          },
-          email: {
-            chunkBy: 'none' as const,
-            maxLength: -1,
-            delayBetweenChunks: 0
-          },
-          api: {
-            chunkBy: 'none' as const,
-            maxLength: -1,
-            delayBetweenChunks: 0
-          },
-          agent: {
-            chunkBy: 'none' as const,
-            maxLength: -1,
-            delayBetweenChunks: 0
-          }
+      // Use persona's responseChunking config if available, otherwise build verbosity-aware defaults
+      let chunkingConfig: any;
+      
+      if (personaConfig?.responseChunking?.rules?.chat) {
+        // Use persona's explicit chunking configuration (only if it has valid rules)
+        chunkingConfig = personaConfig.responseChunking;
+        console.log('📏 Using persona-defined chunking config');
+      } else {
+        console.log('📏 Persona chunking config missing or invalid, building verbosity-aware defaults');
+        // Build verbosity-aware defaults based on personality traits
+        const verbosity = (personaConfig as any)?.personalityTraits?.verbosity || 5;
+        console.log(`📏 Building verbosity-aware chunking config (verbosity: ${verbosity})`);
+        
+        // ALWAYS chunk by sentence (1 sentence per message) for chat
+        // Verbosity controls HOW MANY sentences total, not chunk size
+        // For very low verbosity (1-2), disable chunking - they'll only generate 1 sentence
+        // For verbosity 3+, enable sentence-level chunking
+        if (verbosity <= 2) {
+          chunkingConfig = {
+            enabled: false, // Disable chunking for VERY low verbosity (1 sentence total)
+            rules: {
+              chat: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 },
+              sms: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 },
+              email: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 },
+              api: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 },
+              agent: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 }
+            }
+          };
+        } else {
+          // For verbosity 3+, chunk into 1 sentence per message
+          chunkingConfig = {
+            enabled: true,
+            rules: {
+              chat: { chunkBy: 'sentence' as const, maxLength: 120, delayBetweenChunks: 1000 }, // ~1 sentence max per chunk
+              sms: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 },
+              email: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 },
+              api: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 },
+              agent: { chunkBy: 'none' as const, maxLength: -1, delayBetweenChunks: 0 }
+            }
+          };
         }
-      };
+      }
       
       const chunks = ResponseChunker.chunkResponse(response, 'chat', chunkingConfig);
       console.log(`📨 Split response into ${chunks.length} message chunks`);
