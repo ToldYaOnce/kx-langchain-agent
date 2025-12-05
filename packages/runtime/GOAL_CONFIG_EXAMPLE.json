@@ -1,0 +1,243 @@
+{
+  "enabled": true,
+  "globalSettings": {
+    "maxActiveGoals": 3,
+    "respectDeclines": true,
+    "adaptToUrgency": true,
+    "interestThreshold": 5,
+    "strictOrdering": 8,
+    "maxGoalsPerTurn": 2
+  },
+  "goals": [
+    {
+      "id": "establish_trust",
+      "name": "Establish Trust",
+      "description": "Build rapport and make the user comfortable",
+      "type": "conversation",
+      "priority": "high",
+      "order": 1,
+      "adherence": 7,
+      "triggers": {
+        "messageCount": 1
+      },
+      "behavior": {
+        "message": "Start with a friendly greeting and show genuine interest",
+        "maxAttempts": 1,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "name": "Collect Contact Information",
+      "description": "Get user's email, phone, and name for follow-up",
+      "type": "data_collection",
+      "priority": "critical",
+      "order": 2,
+      "adherence": 10,
+      "triggers": {
+        "afterGoals": ["establish_trust"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone", "name"],
+        "validationRules": {
+          "email": {
+            "pattern": "^[^@]+@[^@]+\\.[^@]+$",
+            "required": true,
+            "errorMessage": "Please provide a valid email address"
+          },
+          "phone": {
+            "pattern": "^\\+?[0-9]{10,}$",
+            "required": true,
+            "errorMessage": "Please provide a valid phone number"
+          },
+          "name": {
+            "required": false
+          }
+        }
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "priority": "high",
+              "leadSource": "website_chat"
+            }
+          },
+          {
+            "type": "send_notification",
+            "eventName": "notification.new_lead",
+            "payload": {
+              "to": "sales_team",
+              "message": "New lead captured from chat",
+              "notificationType": "slack"
+            }
+          }
+        ]
+      },
+      "behavior": {
+        "message": "To help you better, I'll need your contact information",
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "messages": {
+        "request": "What's the best email to reach you at?",
+        "followUp": "I still need your email to send you that information",
+        "acknowledgment": "Perfect! I've got your contact info"
+      }
+    },
+    {
+      "id": "assess_fitness_goals",
+      "name": "Assess Fitness Goals",
+      "description": "Understand user's fitness objectives and experience level",
+      "type": "data_collection",
+      "priority": "high",
+      "order": 3,
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "userSignals": ["lose weight", "build muscle", "get fit", "training", "workout"]
+      },
+      "dataToCapture": {
+        "fields": ["fitnessGoals", "experienceLevel", "injuries", "availability"],
+        "validationRules": {
+          "fitnessGoals": {
+            "required": true
+          },
+          "experienceLevel": {
+            "required": true
+          },
+          "injuries": {
+            "required": false
+          },
+          "availability": {
+            "required": false
+          }
+        }
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "update_crm",
+            "eventName": "crm.lead_qualified",
+            "payload": {
+              "qualificationStatus": "qualified",
+              "qualificationReason": "fitness_goals_assessed"
+            }
+          }
+        ]
+      },
+      "behavior": {
+        "message": "Let's talk about your fitness goals",
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "discuss_pricing",
+      "name": "Discuss Pricing",
+      "description": "Present pricing options and membership tiers",
+      "type": "conversation",
+      "priority": "medium",
+      "order": 4,
+      "adherence": 5,
+      "triggers": {
+        "userSignals": ["price", "cost", "how much", "payment", "membership", "fee"],
+        "messageCount": 5
+      },
+      "behavior": {
+        "message": "Let me share our pricing options with you",
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "schedule_consultation",
+      "name": "Schedule Free Consultation",
+      "description": "Book a time for the user to visit the gym",
+      "type": "schedule_action",
+      "priority": "critical",
+      "order": 5,
+      "adherence": 9,
+      "triggers": {
+        "afterGoals": ["collect_contact_info", "assess_fitness_goals"],
+        "userSignals": ["schedule", "book", "appointment", "visit", "tour", "try it out"],
+        "messageCount": 8
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.requested",
+            "payload": {
+              "appointmentType": "free_consultation",
+              "duration": 30,
+              "priority": "high"
+            }
+          }
+        ]
+      },
+      "behavior": {
+        "message": "Would you like to schedule a free consultation?",
+        "maxAttempts": 4,
+        "backoffStrategy": "persistent"
+      },
+      "messages": {
+        "request": "When would be a good time for you to come in for a free consultation?",
+        "followUp": "We have openings this week if you'd like to try us out",
+        "acknowledgment": "Great! I'll get that scheduled for you"
+      }
+    },
+    {
+      "id": "premium_offer",
+      "name": "Offer Premium Membership",
+      "description": "Present premium tier for highly engaged leads",
+      "type": "conversation",
+      "priority": "low",
+      "order": 6,
+      "adherence": 3,
+      "triggers": {
+        "afterGoals": ["collect_contact_info", "assess_fitness_goals", "discuss_pricing"],
+        "userSignals": ["premium", "best", "upgrade", "all-access"],
+        "messageCount": 10
+      },
+      "behavior": {
+        "message": "Based on your goals, our premium membership might be perfect for you",
+        "maxAttempts": 1,
+        "backoffStrategy": "gentle"
+      }
+    }
+  ],
+  "completionTriggers": {
+    "allCriticalComplete": "lead_fully_qualified",
+    "customCombinations": [
+      {
+        "goalIds": ["collect_contact_info", "assess_fitness_goals", "schedule_consultation"],
+        "triggerIntent": "high_intent_lead",
+        "description": "Lead has provided contact, goals, and booked a consultation",
+        "channels": ["chat", "sms"]
+      },
+      {
+        "goalIds": ["collect_contact_info", "discuss_pricing"],
+        "triggerIntent": "pricing_discussion_complete",
+        "description": "Lead has contact info and discussed pricing"
+      }
+    ],
+    "channelSpecific": {
+      "chat": {
+        "goalIds": ["collect_contact_info", "schedule_consultation"],
+        "triggerIntent": "chat_conversion_complete",
+        "description": "Minimum viable conversion for chat channel"
+      },
+      "sms": {
+        "goalIds": ["collect_contact_info"],
+        "triggerIntent": "sms_lead_captured",
+        "description": "Basic lead capture for SMS channel"
+      }
+    }
+  }
+}
+

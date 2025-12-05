@@ -18,12 +18,12 @@ interface TimingConfig {
 }
 
 const DEFAULT_TIMING: TimingConfig = {
-  readingSpeed: 50, // Average adult reading speed (chars/sec) - very fast reading
-  typingSpeed: 8, // Realistic typing speed (chars/sec) - slower, more human-like
-  minBusyTime: 0.5, // Minimum "busy" time before first response - very quick
-  maxBusyTime: 2, // Maximum "busy" time before first response - faster initial response
-  minThinkingTime: 1.0, // Min pause between messages - slower typing between chunks
-  maxThinkingTime: 2.5, // Max pause between messages - more realistic pauses
+  readingSpeed: 100, // Fast reading speed (chars/sec)
+  typingSpeed: 12, // Faster typing speed (chars/sec)
+  minBusyTime: 0.1, // Minimum "busy" time before first response - very quick
+  maxBusyTime: 0.5, // Maximum "busy" time before first response - fast initial response
+  minThinkingTime: 0.3, // Min pause between messages - quick typing between chunks
+  maxThinkingTime: 0.8, // Max pause between messages - shorter pauses
 };
 
 /**
@@ -86,38 +86,90 @@ export async function handler(
     const dynamoService = new DynamoDBService(config);
     const eventBridgeService = new EventBridgeService(config);
     
+    // 📨 Emit chat.received - message has arrived
+    await eventBridgeService.publishCustomEvent(
+      'kxgen.agent',
+      'chat.received',
+      {
+        channelId: event.channelId,
+        tenantId: event.tenantId,
+        personaId: event.userId,
+        timestamp: new Date().toISOString()
+      }
+    );
+    
     // Load company info and persona from DynamoDB
     let companyInfo: any = undefined;
     let personaConfig: any = undefined;
     let timingConfig: TimingConfig = DEFAULT_TIMING;
+    let channelStateService: any = undefined; // For message interruption detection
     
     if (event.tenantId) {
       try {
         console.log(`🏢 Loading company info for tenant: ${event.tenantId}`);
         const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
         const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
+        const { ChannelStateService } = await import('../lib/channel-state-service.js');
         const client = new DynamoDBClient({});
-        const docClient = DynamoDBDocumentClient.from(client);
+        const docClient = DynamoDBDocumentClient.from(client, {
+          marshallOptions: {
+            removeUndefinedValues: true,
+          },
+        });
+        
+        // Initialize channel state service for message interruption detection
+        channelStateService = new ChannelStateService(
+          docClient,
+          process.env.WORKFLOW_STATE_TABLE || 'KxGen-agent-workflow-state'
+        );
 
         // Load company info from DelayedReplies-company_info table
+        const companyInfoTable = process.env.COMPANY_INFO_TABLE || 'DelayedReplies-company_info';
+        console.log(`🏢 Querying company info table: ${companyInfoTable} for tenantId: ${event.tenantId}`);
+        
         const companyResult = await docClient.send(new GetCommand({
-          TableName: process.env.COMPANY_INFO_TABLE || 'DelayedReplies-company_info',
+          TableName: companyInfoTable,
           Key: {
             tenantId: event.tenantId
           }
         }));
+        
+        console.log(`🏢 Company info query result: Item found = ${!!companyResult.Item}`);
 
         if (companyResult.Item) {
           companyInfo = {
-            name: companyResult.Item.name,
+            // Core identity
+            name: companyResult.Item.companyName || companyResult.Item.name,
             industry: companyResult.Item.industry,
             description: companyResult.Item.description,
+            
+            // Contact info
+            phone: companyResult.Item.phone,
+            email: companyResult.Item.email,
+            website: companyResult.Item.website,
+            address: companyResult.Item.address,
+            
+            // Business details
+            businessHours: companyResult.Item.businessHours,
+            services: companyResult.Item.services,
             products: companyResult.Item.products,
+            
+            // Marketing
             benefits: companyResult.Item.benefits,
             targetCustomers: companyResult.Item.targetCustomers,
             differentiators: companyResult.Item.differentiators,
+            
+            // Configuration
+            goalConfiguration: companyResult.Item.goalConfiguration,
+            responseGuidelines: companyResult.Item.responseGuidelines,
+            contactRequirements: companyResult.Item.contactRequirements,
           };
           console.log(`✅ Loaded company info: ${companyInfo.name} (${companyInfo.industry})`);
+          
+          // Log if company-level goals are configured
+          if (companyInfo.goalConfiguration?.enabled) {
+            console.log(`🎯 Company-level goals enabled: ${companyInfo.goalConfiguration.goals?.length || 0} goals configured`);
+          }
         } else {
           console.log(`⚠️ No company info found for tenant ${event.tenantId}, using defaults`);
         }
@@ -176,10 +228,21 @@ export async function handler(
       persona: personaConfig, // Pass pre-loaded persona from DynamoDB
     });
     
-    // Process the message and generate response
-    console.log(`Processing message for ${event.tenantId}/${event.email_lc}`);
+    // Generate unique message ID for interruption detection
+    const inboundMessageId = `msg_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    console.log(`📨 Processing message ${inboundMessageId} for ${event.tenantId}/${event.email_lc}`);
     
-    const response = await agentService.processMessage({
+    // Update channel state with this message ID BEFORE processing
+    // This allows us to detect if user sent another message while we're processing
+    if (event.channelId && channelStateService) {
+      await channelStateService.updateLastProcessedMessageId(
+        event.channelId,
+        inboundMessageId,
+        event.tenantId
+      );
+    }
+    
+    const result = await agentService.processMessage({
       tenantId: event.tenantId,
       email_lc: event.email_lc,
       text: event.text,
@@ -189,7 +252,13 @@ export async function handler(
       conversation_id: event.conversation_id,
     });
     
+    const response = result.response;
+    const followUpQuestion = result.followUpQuestion;
+    
     console.log(`Generated response: ${response.substring(0, 100)}...`);
+    if (followUpQuestion) {
+      console.log(`💬 Follow-up question: ${followUpQuestion}`);
+    }
     
     // Emit chat.message event for the agent's response
     // This will be picked up by the messaging service for persistence and delivery
@@ -256,15 +325,15 @@ export async function handler(
         return Math.floor((charCount / config.typingSpeed) * 1000);
       };
       
-      const calculateFirstMessageDelay = (originalText: string, responseText: string, config: TimingConfig): number => {
+      const calculateFirstMessageDelay = (originalText: string, chunkText: string, config: TimingConfig): number => {
         const readingTime = Math.floor((originalText.length / config.readingSpeed) * 1000);
-        const typingTime = calculateTypingTime(responseText, config);
+        const typingTime = calculateTypingTime(chunkText, config);
         const busyTime = Math.floor(Math.random() * (config.maxBusyTime - config.minBusyTime) + config.minBusyTime) * 1000;
         return readingTime + typingTime + busyTime;
       };
       
-      const calculateSubsequentMessageDelay = (responseText: string, config: TimingConfig): number => {
-        const typingTime = calculateTypingTime(responseText, config);
+      const calculateSubsequentMessageDelay = (chunkText: string, config: TimingConfig): number => {
+        const typingTime = calculateTypingTime(chunkText, config);
         const thinkingTime = Math.floor(Math.random() * (config.maxThinkingTime - config.minThinkingTime) + config.minThinkingTime) * 1000;
         return typingTime + thinkingTime;
       };
@@ -296,6 +365,21 @@ export async function handler(
         // Wait before sending
         await new Promise(resolve => setTimeout(resolve, delay));
         
+        // 🚨 INTERRUPTION CHECK: DISABLED FOR NOW - needs more testing
+        // The issue is that loadWorkflowState may return a fresh state without lastProcessedMessageId
+        // TODO: Fix this properly by ensuring lastProcessedMessageId is persisted and loaded correctly
+        // if (event.channelId && channelStateService) {
+        //   const currentState = await channelStateService.loadWorkflowState(event.channelId, event.tenantId);
+        //   if (currentState.lastProcessedMessageId && currentState.lastProcessedMessageId !== inboundMessageId) {
+        //     console.log(`⚠️ Message superseded! User sent new message while we were processing.`);
+        //     console.log(`   Expected messageId: ${inboundMessageId}`);
+        //     console.log(`   Current messageId: ${currentState.lastProcessedMessageId}`);
+        //     console.log(`   Discarding remaining ${chunks.length - i} chunk(s)`);
+        //     console.log(`   ✅ Goal data already persisted - no data loss`);
+        //     return; // Exit early - don't send stale chunks
+        //   }
+        // }
+        
         console.log(`👤 Using persona name: "${event.userName}" (personaId: ${event.userId})`);
         console.log(`📤 Sending message ${i + 1}/${chunks.length} with userName="${event.userName}": ${chunk.text.substring(0, 50)}...`);
 
@@ -315,6 +399,9 @@ export async function handler(
           agentId: event.userId,
           originMarker: 'persona',
           metadata: originMetadata,
+          // Chunk tracking for presence events (consumer emits chat.stoppedTyping when currentChunk === totalChunks)
+          currentChunk: i + 1,  // 1-indexed
+          totalChunks: chunks.length + (followUpQuestion ? 1 : 0), // Include follow-up in count
         };
         
         await eventBridgeService.publishCustomEvent(
@@ -327,6 +414,67 @@ export async function handler(
       }
       
       console.log(`🎉 All ${chunks.length} messages sent successfully!`);
+      
+      // Send follow-up question as a separate delayed message (if present)
+      if (followUpQuestion) {
+        console.log(`💬 Sending follow-up question after main response...`);
+        
+        // Calculate delay after last chunk
+        const followUpDelay = calculateSubsequentMessageDelay(followUpQuestion, timingConfig);
+        console.log(`⏱️ Follow-up delay: ${Math.floor(followUpDelay / 1000)} seconds`);
+        
+        await new Promise(resolve => setTimeout(resolve, followUpDelay));
+        
+        // 🚨 INTERRUPTION CHECK: DISABLED FOR NOW - needs more testing
+        // TODO: Fix this properly by ensuring lastProcessedMessageId is persisted and loaded correctly
+        // if (event.channelId && channelStateService) {
+        //   const currentState = await channelStateService.loadWorkflowState(event.channelId, event.tenantId);
+        //   if (currentState.lastProcessedMessageId && currentState.lastProcessedMessageId !== inboundMessageId) {
+        //     console.log(`⚠️ Follow-up question superseded! User sent new message.`);
+        //     console.log(`   Discarding follow-up question`);
+        //     console.log(`   ✅ Goal data already persisted - no data loss`);
+        //     return; // Exit early - don't send stale follow-up
+        //   }
+        // }
+        
+        const timestamp = new Date().toISOString();
+        const epochMs = Date.now();
+        const randomSuffix = Math.random().toString(36).substr(2, 9);
+        const generatedMessageId = `agent-followup-${epochMs}-${randomSuffix}`;
+        const originMetadata = createOriginMetadata(event, generatedMessageId);
+        
+        // Calculate total chunks (main chunks + follow-up)
+        const totalChunksWithFollowUp = chunks.length + 1;
+        
+        const followUpEvent = {
+          tenantId: event.tenantId,
+          channelId: event.channelId,
+          userId: event.userId,
+          userName: event.userName || 'AI Assistant',
+          userType: 'agent',
+          message: followUpQuestion,
+          messageId: generatedMessageId,
+          timestamp,
+          connectionId: event.connectionId || event.channel_context?.chat?.connectionId,
+          messageType: 'text',
+          senderId: event.userId,
+          senderType: 'agent',
+          agentId: event.userId,
+          originMarker: 'persona',
+          metadata: originMetadata,
+          // This is the last chunk - consumer should emit chat.stoppedTyping
+          currentChunk: totalChunksWithFollowUp,
+          totalChunks: totalChunksWithFollowUp,
+        };
+        
+        await eventBridgeService.publishCustomEvent(
+          'kx-event-tracking',
+          'chat.message',
+          followUpEvent
+        );
+        
+        console.log(`✅ Follow-up question sent successfully!`);
+      }
     } else {
       console.log('Not a chat message, skipping chat.message emission');
     }

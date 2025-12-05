@@ -40,11 +40,22 @@ export class EventBridgeService {
     const eventBusName = this.config.outboundEventBusName || this.config.outboundEventBusArn;
     
     if (!eventBusName) {
-      console.warn('No EventBridge bus configured, skipping event publication');
+      console.warn('⚠️  No EventBridge bus configured, skipping event publication');
+      console.warn('   Event would have been:', { source, detailType, detail });
       return;
     }
 
     try {
+      console.log('\x1b[35m════════════════════════════════════════════════════════════════\x1b[0m');
+      console.log('\x1b[35m📤 PUBLISHING EVENTBRIDGE EVENT\x1b[0m');
+      console.log('\x1b[35m════════════════════════════════════════════════════════════════\x1b[0m');
+      console.log(`\x1b[36m🎯 Source:      \x1b[0m${source}`);
+      console.log(`\x1b[36m🏷️  Detail Type: \x1b[0m${detailType}`);
+      console.log(`\x1b[36m🚀 Event Bus:   \x1b[0m${eventBusName}`);
+      console.log(`\x1b[36m📦 Payload:\x1b[0m`);
+      console.log(JSON.stringify(detail, null, 2));
+      console.log('\x1b[35m════════════════════════════════════════════════════════════════\x1b[0m');
+      
       await this.client.send(new PutEventsCommand({
         Entries: [{
           Source: source,
@@ -53,8 +64,14 @@ export class EventBridgeService {
           EventBusName: eventBusName,
         }],
       }));
+      
+      console.log(`\x1b[32m✅ Event published successfully: ${detailType}\x1b[0m`);
     } catch (error) {
+      console.log('\x1b[31m════════════════════════════════════════════════════════════════\x1b[0m');
+      console.log('\x1b[31m❌ EVENTBRIDGE PUBLISH FAILED\x1b[0m');
+      console.log('\x1b[31m════════════════════════════════════════════════════════════════\x1b[0m');
       console.error('Failed to publish custom event to EventBridge:', error);
+      console.log('\x1b[31m════════════════════════════════════════════════════════════════\x1b[0m');
       throw error;
     }
   }
@@ -66,11 +83,26 @@ export class EventBridgeService {
     const eventBusName = this.config.outboundEventBusName || this.config.outboundEventBusArn;
     
     if (!eventBusName) {
-      console.warn('No EventBridge bus configured, skipping event publication');
+      console.warn('⚠️  No EventBridge bus configured, skipping event publication');
+      console.warn('   Event would have been:', { 
+        source: event.source, 
+        detailType: event['detail-type'],
+        detail: event.detail 
+      });
       return;
     }
 
     try {
+      console.log('\x1b[35m════════════════════════════════════════════════════════════════\x1b[0m');
+      console.log('\x1b[35m📤 PUBLISHING EVENTBRIDGE EVENT\x1b[0m');
+      console.log('\x1b[35m════════════════════════════════════════════════════════════════\x1b[0m');
+      console.log(`\x1b[36m🎯 Source:      \x1b[0m${event.source}`);
+      console.log(`\x1b[36m🏷️  Detail Type: \x1b[0m${event['detail-type']}`);
+      console.log(`\x1b[36m🚀 Event Bus:   \x1b[0m${eventBusName}`);
+      console.log(`\x1b[36m📦 Payload:\x1b[0m`);
+      console.log(JSON.stringify(event.detail, null, 2));
+      console.log('\x1b[35m════════════════════════════════════════════════════════════════\x1b[0m');
+      
       await this.client.send(new PutEventsCommand({
         Entries: [
           {
@@ -81,8 +113,14 @@ export class EventBridgeService {
           },
         ],
       }));
+      
+      console.log(`\x1b[32m✅ Event published successfully: ${event['detail-type']}\x1b[0m`);
     } catch (error) {
+      console.log('\x1b[31m════════════════════════════════════════════════════════════════\x1b[0m');
+      console.log('\x1b[31m❌ EVENTBRIDGE PUBLISH FAILED\x1b[0m');
+      console.log('\x1b[31m════════════════════════════════════════════════════════════════\x1b[0m');
       console.error('Failed to publish event to EventBridge:', error);
+      console.log('\x1b[31m════════════════════════════════════════════════════════════════\x1b[0m');
       throw error;
     }
   }
@@ -169,4 +207,47 @@ export class EventBridgeService {
       },
     };
   }
+
+  /**
+   * Publish LLM usage event for cost tracking
+   */
+  async publishLLMUsage(usage: LLMUsageEvent): Promise<void> {
+    // Always log for debugging
+    const costStr = usage.estimatedCostUsd !== undefined 
+      ? `, Cost=$${usage.estimatedCostUsd.toFixed(6)}` 
+      : '';
+    console.log(`📊 LLM Usage [${usage.requestType}]: Input=${usage.inputTokens}, Output=${usage.outputTokens}, Total=${usage.totalTokens}${costStr}`);
+    
+    await this.publishCustomEvent(
+      'kxgen.agent',
+      'llm.usage',
+      usage
+    );
+  }
+}
+
+/**
+ * LLM Usage Event for cost tracking
+ */
+export interface LLMUsageEvent {
+  /** Tenant identifier */
+  tenantId: string;
+  /** Channel/conversation identifier */
+  channelId?: string;
+  /** Message source (chat, sms, email, etc.) */
+  source: string;
+  /** Type of LLM request */
+  requestType: 'intent_detection' | 'conversational_response' | 'follow_up_question' | 'verification_message' | 'error_recovery' | 'engagement_question';
+  /** Model identifier */
+  model: string;
+  /** Input tokens consumed */
+  inputTokens: number;
+  /** Output tokens generated */
+  outputTokens: number;
+  /** Total tokens (input + output) */
+  totalTokens: number;
+  /** Timestamp */
+  timestamp: string;
+  /** Optional: Estimated cost in USD (if rate available) */
+  estimatedCostUsd?: number;
 }

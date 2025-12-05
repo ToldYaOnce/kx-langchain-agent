@@ -25,6 +25,12 @@ export interface DynamoDBTablesProps {
   personasTableName?: string;
 
   /**
+   * Name for the agent workflow state table
+   * @default 'KxGen-agent-workflow-state'
+   */
+  workflowStateTableName?: string;
+
+  /**
    * Billing mode for all tables
    * @default dynamodb.BillingMode.PAY_PER_REQUEST
    */
@@ -135,6 +141,37 @@ export class DynamoDBTables extends Construct {
    */
   public readonly personasTable: dynamodb.Table;
 
+  /**
+   * Agent workflow state table for conversation state management
+   * 
+   * **Schema:**
+   * - PK: `channelId` (Channel identifier)
+   * - SK: `createdAt` (Timestamp for state versioning)
+   * 
+   * **Purpose:**
+   * This table is OWNED by the agent service and stores workflow state
+   * separately from the channels table (owned by kx-notifications-messaging).
+   * This eliminates cross-package dependencies.
+   * 
+   * **Stored Data:**
+   * - Active goals
+   * - Completed goals
+   * - Captured data from conversations
+   * - Contact capture status (email, phone, name)
+   * - Message count
+   * - Workflow progress
+   * 
+   * **Use Cases:**
+   * - Track goal progression in conversations
+   * - Store captured data until ready to create lead
+   * - Resume conversations after interruptions
+   * - Query workflow state for analytics
+   */
+  public readonly workflowStateTable: dynamodb.Table;
+
+  // NOTE: Channels table is owned by kx-notifications-and-messaging stack
+  // Reference it via LangchainAgent's existingTables prop instead
+
   constructor(scope: Construct, id: string, props: DynamoDBTablesProps = {}) {
     super(scope, id);
 
@@ -142,6 +179,7 @@ export class DynamoDBTables extends Construct {
       messagesTableName = 'kxgen-messages',
       leadsTableName = 'kxgen-leads',
       personasTableName = 'kxgen-personas',
+      workflowStateTableName = 'KxGen-agent-workflow-state',
       billingMode = dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy = RemovalPolicy.RETAIN,
       pointInTimeRecovery = true,
@@ -282,8 +320,53 @@ export class DynamoDBTables extends Construct {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // Agent Workflow State Table
+    this.workflowStateTable = new dynamodb.Table(this, 'WorkflowStateTable', {
+      ...commonProps,
+      tableName: workflowStateTableName,
+      partitionKey: {
+        name: 'channelId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'createdAt',
+        type: dynamodb.AttributeType.STRING,
+      },
+    });
+
+    // Workflow State Table GSI1: Query by tenant
+    this.workflowStateTable.addGlobalSecondaryIndex({
+      indexName: 'GSI1',
+      partitionKey: {
+        name: 'GSI1PK', // tenantId
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'GSI1SK', // lastUpdated
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Workflow State Table GSI2: Query by goal status
+    this.workflowStateTable.addGlobalSecondaryIndex({
+      indexName: 'GSI2',
+      partitionKey: {
+        name: 'GSI2PK', // tenantId#goalId
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'GSI2SK', // messageCount
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // NOTE: Channels table is NOT created here - it's owned by kx-notifications-and-messaging
+    // This stack references it via existingTables prop in LangchainAgent construct
+
     // Add tags for better resource management
-    const tables = [this.messagesTable, this.leadsTable, this.personasTable];
+    const tables = [this.messagesTable, this.leadsTable, this.personasTable, this.workflowStateTable];
     tables.forEach(table => {
       table.node.addMetadata('component', 'kxgen-langchain-agent');
       table.node.addMetadata('purpose', 'AI agent data storage');
@@ -299,11 +382,13 @@ export class DynamoDBTables extends Construct {
     messages: string;
     leads: string;
     personas: string;
+    workflowState: string;
   } {
     return {
       messages: this.messagesTable.tableName,
       leads: this.leadsTable.tableName,
       personas: this.personasTable.tableName,
+      workflowState: this.workflowStateTable.tableName,
     };
   }
 
@@ -315,15 +400,17 @@ export class DynamoDBTables extends Construct {
   public getTableArns(): string[] {
     const arns: string[] = [];
     
-    // Add table ARNs
+    // Add table ARNs (channels table excluded - owned by kx-notifications-and-messaging)
     arns.push(this.messagesTable.tableArn);
     arns.push(this.leadsTable.tableArn);
     arns.push(this.personasTable.tableArn);
+    arns.push(this.workflowStateTable.tableArn);
     
     // Add GSI ARNs
     arns.push(`${this.messagesTable.tableArn}/index/*`);
     arns.push(`${this.leadsTable.tableArn}/index/*`);
     arns.push(`${this.personasTable.tableArn}/index/*`);
+    arns.push(`${this.workflowStateTable.tableArn}/index/*`);
     
     return arns;
   }

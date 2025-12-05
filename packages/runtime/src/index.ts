@@ -48,6 +48,7 @@ export { MemoryChatHistory } from './lib/memory-chat-history.js';
 export { ResponseChunker } from './lib/response-chunker.js';
 export { GreetingService } from './lib/greeting-service.js';
 export { PersonaService } from './lib/persona-service.js';
+export { MessageTrackingService, type StateSnapshot } from './lib/message-tracking-service.js';
 export { ActionTagProcessor, type ActionTagConfig, type ActionTagMapping, DEFAULT_ACTION_TAGS } from './lib/action-tag-processor.js';
 export { IntentService, type IntentMatch, type IntentAnalytics } from './lib/intent-service.js';
 export { OperationalService } from './lib/operational-service.js';

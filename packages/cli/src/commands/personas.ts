@@ -136,7 +136,7 @@ export function createPersonasCommand(): Command {
         }
         
         console.log('\nResponse Guidelines:');
-        persona.responseGuidelines.forEach(guideline => {
+        (persona.responseGuidelines as any)?.forEach?.((guideline: any) => {
           console.log(`  • ${guideline}`);
         });
         

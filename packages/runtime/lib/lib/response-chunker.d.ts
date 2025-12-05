@@ -5,6 +5,7 @@ export interface ResponseChunk {
     index: number;
     total: number;
     delayMs: number;
+    responseToMessageId?: string;
 }
 /**
  * Service for chunking agent responses based on channel and persona configuration
@@ -13,7 +14,7 @@ export declare class ResponseChunker {
     /**
      * Chunk a response based on persona configuration and channel
      */
-    static chunkResponse(response: string, channel: MessageSource, chunkingConfig?: ResponseChunking): ResponseChunk[];
+    static chunkResponse(response: string, channel: MessageSource, chunkingConfig?: ResponseChunking, responseToMessageId?: string): ResponseChunk[];
     /**
      * Chunk response by sentences, respecting max length
      */

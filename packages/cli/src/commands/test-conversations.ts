@@ -253,7 +253,7 @@ export function createTestConversationsCommand(): Command {
             };
             
             // Process the message
-            response = await agentService.processMessage({
+            const processResult = await agentService.processMessage({
               tenantId: 'test',
               email_lc: 'test@example.com',
               text: message,
@@ -266,6 +266,9 @@ export function createTestConversationsCommand(): Command {
             
             // Restore console.log
             console.log = originalLog;
+            
+            // Extract response text
+            response = typeof processResult === 'string' ? processResult : processResult.response;
             
             // Add agent response to history
             if (response) {

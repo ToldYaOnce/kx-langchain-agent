@@ -1,44 +1,63 @@
 import type { 
-  ConversationGoal, 
   GoalConfiguration, 
-  ConversationGoalState,
-  GoalTrigger 
-} from '../types/goals.js';
-import { GoalStateManager } from './goal-state-manager.js';
-import { InterestDetector, type InterestAnalysis } from './interest-detector.js';
-import { InfoExtractor, type ExtractedInfo } from './info-extractor.js';
+  GoalDefinition,
+  ActionTrigger,
+  MessageSource,
+  ChannelWorkflowState
+} from '../types/dynamodb-schemas.js';
 
 export interface GoalRecommendation {
   goalId: string;
-  goal: ConversationGoal;
+  goal: GoalDefinition;
   priority: number;
   reason: string;
   approach: 'direct' | 'contextual' | 'subtle';
   message: string;
   shouldPursue: boolean;
+  adherenceLevel: number; // 1-10 scale
+  attemptCount?: number; // Number of times this goal has been pursued
 }
 
 export interface GoalOrchestrationResult {
   recommendations: GoalRecommendation[];
-  extractedInfo: ExtractedInfo;
-  interestAnalysis: InterestAnalysis;
+  extractedInfo: Record<string, any>;
   stateUpdates: {
     newlyCompleted: string[];
     newlyActivated: string[];
     declined: string[];
   };
   triggeredIntents: string[];
+  activeGoals: string[];
+  completedGoals: string[];
 }
 
-export class GoalOrchestrator {
-  private stateManager: GoalStateManager;
-  private interestDetector: InterestDetector;
-  private infoExtractor: InfoExtractor;
+export interface GoalState {
+  sessionId: string;
+  userId: string;
+  tenantId: string;
+  messageCount: number;
+  completedGoals: string[];
+  activeGoals: string[];
+  declinedGoals: string[];
+  attemptCounts: Record<string, number>;
+  collectedData: Record<string, any>;
+  lastMessage?: string;
+}
 
-  constructor() {
-    this.stateManager = new GoalStateManager();
-    this.interestDetector = new InterestDetector();
-    this.infoExtractor = new InfoExtractor();
+/**
+ * Enhanced Goal Orchestrator with Phase A features:
+ * - Goal ordering based on `order` field
+ * - Adherence-based prompting (1-10 scale)
+ * - Trigger evaluation (prerequisiteGoals, userSignals, messageCount)
+ * - Strict ordering mode
+ * - Max goals per turn
+ */
+export class GoalOrchestrator {
+  private eventBridgeService?: any;
+  private goalStates: Map<string, GoalState> = new Map();
+
+  constructor(eventBridgeService?: any) {
+    this.eventBridgeService = eventBridgeService;
   }
 
   /**
@@ -50,52 +69,111 @@ export class GoalOrchestrator {
     userId: string,
     tenantId: string,
     goalConfig: GoalConfiguration,
-    conversationHistory?: string[]
+    conversationHistory?: string[],
+    channel?: MessageSource,
+    channelState?: ChannelWorkflowState
   ): Promise<GoalOrchestrationResult> {
+    console.log(`🎯 Goal Orchestration START - Session: ${sessionId}`);
+
+    // Get or initialize state (now using channel state if available)
+    const state = this.getOrInitState(sessionId, userId, tenantId, channelState);
     
-    // Get current state
-    const state = this.stateManager.incrementMessage(sessionId, userId, tenantId);
+    // If we have channel state, use it as the source of truth
+    if (channelState) {
+      console.log(`📊 Using channel state: ${channelState.messageCount} messages, ${channelState.completedGoals.length} completed`);
+      state.messageCount = channelState.messageCount;
+      state.completedGoals = [...channelState.completedGoals];
+      state.activeGoals = [...channelState.activeGoals];
+      state.collectedData = { ...channelState.capturedData };
+    } else {
+      // Legacy behavior: increment message count
+      state.messageCount++;
+    }
     
-    // Analyze interest and extract information
-    const interestAnalysis = this.interestDetector.analyzeMessage(message, conversationHistory);
-    const extractedInfo = this.infoExtractor.extractInfo(message);
+    // CRITICAL: Sanitize state - remove goals that no longer exist in current config
+    const validGoalIds = new Set(goalConfig.goals.map(g => g.id));
+    const invalidActiveGoals = state.activeGoals.filter(id => !validGoalIds.has(id));
+    const invalidCompletedGoals = state.completedGoals.filter(id => !validGoalIds.has(id));
     
-    // Update state with analysis results
-    this.stateManager.incrementMessage(
-      sessionId, 
-      userId, 
-      tenantId, 
-      interestAnalysis.interestLevel,
-      interestAnalysis.urgencyLevel
-    );
+    if (invalidActiveGoals.length > 0) {
+      console.log(`⚠️ Removing ${invalidActiveGoals.length} invalid active goals: ${invalidActiveGoals.join(', ')}`);
+      state.activeGoals = state.activeGoals.filter(id => validGoalIds.has(id));
+    }
+    
+    if (invalidCompletedGoals.length > 0) {
+      console.log(`⚠️ Removing ${invalidCompletedGoals.length} invalid completed goals: ${invalidCompletedGoals.join(', ')}`);
+      state.completedGoals = state.completedGoals.filter(id => validGoalIds.has(id));
+    }
+    
+    state.lastMessage = message;
+
+    console.log(`📊 State: ${state.messageCount} messages, ${state.completedGoals.length} completed, ${state.activeGoals.length} active`);
 
     const result: GoalOrchestrationResult = {
       recommendations: [],
-      extractedInfo,
-      interestAnalysis,
+      extractedInfo: {},
       stateUpdates: {
         newlyCompleted: [],
         newlyActivated: [],
         declined: []
       },
-      triggeredIntents: []
+      triggeredIntents: [],
+      activeGoals: [...state.activeGoals],
+      completedGoals: [...state.completedGoals]
     };
 
-    // Process extracted information
-    await this.processExtractedInfo(extractedInfo, state, result);
+    if (!goalConfig.enabled) {
+      console.log('⚠️ Goal orchestration disabled');
+      return result;
+    }
+
+    // Phase A: Filter eligible goals based on triggers (MOVED BEFORE extraction!)
+    const eligibleGoals = this.filterEligibleGoals(goalConfig.goals, state, message, channel);
+    console.log(`✅ ${eligibleGoals.length} eligible goals (from ${goalConfig.goals.length} total)`);
+
+    // Phase B: Extract information from message (dynamic fields) - NOW includes eligible goals!
+    await this.extractInformation(message, goalConfig, state, result, eligibleGoals);
 
     // Check for information declines
     this.processInformationDeclines(message, state, result);
 
-    // Generate goal recommendations
-    if (goalConfig.enabled) {
-      result.recommendations = await this.generateRecommendations(
-        goalConfig,
-        state,
-        interestAnalysis,
-        message
-      );
+    // Phase A: Sort by order and importance
+    const sortedGoals = this.sortGoalsByOrderAndImportance(eligibleGoals, goalConfig);
+    
+    // Phase A: Apply strict ordering and max goals per turn
+    const goalsToActivate = this.applyGlobalConstraints(sortedGoals, goalConfig, state);
+    console.log(`🎯 ${goalsToActivate.length} goals to activate (after constraints)`);
+
+    // Generate recommendations for each goal
+    for (const goal of goalsToActivate) {
+      const recommendation = this.generateRecommendation(goal, state, goalConfig);
+      if (recommendation) {
+        result.recommendations.push(recommendation);
+        
+        // Mark as active if not already
+        if (!state.activeGoals.includes(goal.id)) {
+          state.activeGoals.push(goal.id);
+          result.stateUpdates.newlyActivated.push(goal.id);
+        }
+      }
     }
+
+    console.log(`📋 Generated ${result.recommendations.length} recommendations`);
+
+    // Update activeGoals: merge NEW recommendations with EXISTING active goals
+    const newlyRecommendedGoals = result.recommendations
+      .filter(r => r.shouldPursue)
+      .map(r => r.goalId);
+    
+    // Combine existing active goals with newly recommended ones (dedupe)
+    const allActiveGoals = [...new Set([...state.activeGoals, ...newlyRecommendedGoals])];
+    
+    // Remove any that were just completed
+    result.activeGoals = allActiveGoals.filter(
+      goalId => !result.stateUpdates.newlyCompleted.includes(goalId)
+    );
+    
+    console.log(`🎯 Updated result.activeGoals: ${JSON.stringify(result.activeGoals)} (from ${state.activeGoals.length} existing + ${newlyRecommendedGoals.length} new)`);
 
     // Check for completion triggers
     this.checkCompletionTriggers(goalConfig, state, result);
@@ -104,431 +182,534 @@ export class GoalOrchestrator {
   }
 
   /**
-   * Process any information extracted from the user's message
+   * PHASE B: Extract information from message based on goal dataToCapture
    */
-  private async processExtractedInfo(
-    extractedInfo: ExtractedInfo,
-    state: ConversationGoalState,
-    result: GoalOrchestrationResult
-  ): Promise<void> {
-    
-    // Process email
-    if (extractedInfo.email) {
-      this.stateManager.collectInformation(
-        state.sessionId,
-        state.userId,
-        state.tenantId,
-        'email',
-        extractedInfo.email.value,
-        extractedInfo.email.validated
-      );
-
-      // Complete email collection goal
-      if (state.activeGoals.includes('collect_email')) {
-        this.stateManager.completeGoal(
-          state.sessionId,
-          state.userId,
-          state.tenantId,
-          'collect_email',
-          'extracted_from_message'
-        );
-        result.stateUpdates.newlyCompleted.push('collect_email');
-      }
-    }
-
-    // Process phone
-    if (extractedInfo.phone) {
-      this.stateManager.collectInformation(
-        state.sessionId,
-        state.userId,
-        state.tenantId,
-        'phone',
-        extractedInfo.phone.value,
-        extractedInfo.phone.validated
-      );
-
-      // Complete phone collection goal
-      if (state.activeGoals.includes('collect_phone')) {
-        this.stateManager.completeGoal(
-          state.sessionId,
-          state.userId,
-          state.tenantId,
-          'collect_phone',
-          'extracted_from_message'
-        );
-        result.stateUpdates.newlyCompleted.push('collect_phone');
-      }
-    }
-
-    // Process names
-    if (extractedInfo.firstName) {
-      this.stateManager.collectInformation(
-        state.sessionId,
-        state.userId,
-        state.tenantId,
-        'firstName',
-        extractedInfo.firstName.value,
-        true
-      );
-
-      // Complete name collection goal
-      if (state.activeGoals.includes('collect_name_first')) {
-        this.stateManager.completeGoal(
-          state.sessionId,
-          state.userId,
-          state.tenantId,
-          'collect_name_first',
-          'extracted_from_message'
-        );
-        result.stateUpdates.newlyCompleted.push('collect_name_first');
-      }
-    }
-
-    if (extractedInfo.lastName) {
-      this.stateManager.collectInformation(
-        state.sessionId,
-        state.userId,
-        state.tenantId,
-        'lastName',
-        extractedInfo.lastName.value,
-        true
-      );
-    }
-
-    if (extractedInfo.fullName) {
-      this.stateManager.collectInformation(
-        state.sessionId,
-        state.userId,
-        state.tenantId,
-        'fullName',
-        extractedInfo.fullName.value,
-        true
-      );
-
-      // Complete name collection goal
-      if (state.activeGoals.includes('collect_name')) {
-        this.stateManager.completeGoal(
-          state.sessionId,
-          state.userId,
-          state.tenantId,
-          'collect_name',
-          'extracted_from_message'
-        );
-        result.stateUpdates.newlyCompleted.push('collect_name');
-      }
-    }
-  }
-
-  /**
-   * Check if user is declining to provide information
-   */
-  private processInformationDeclines(
+  private async extractInformation(
     message: string,
-    state: ConversationGoalState,
-    result: GoalOrchestrationResult
-  ): void {
-    const decline = this.infoExtractor.detectInformationDecline(message);
-    
-    if (decline.declined && decline.confidence > 0.7) {
-      // Find which goal they might be declining
-      const activeInfoGoals = state.activeGoals.filter(goalId => 
-        goalId.startsWith('collect_')
-      );
-
-      if (activeInfoGoals.length > 0) {
-        const declinedGoal = activeInfoGoals[0]; // Assume they're declining the most recent request
-        this.stateManager.declineGoal(
-          state.sessionId,
-          state.userId,
-          state.tenantId,
-          declinedGoal
-        );
-        result.stateUpdates.declined.push(declinedGoal);
-      }
-    }
-  }
-
-  /**
-   * Generate recommendations for which goals to pursue
-   */
-  private async generateRecommendations(
     goalConfig: GoalConfiguration,
-    state: ConversationGoalState,
-    interestAnalysis: InterestAnalysis,
-    message: string
-  ): Promise<GoalRecommendation[]> {
-    const recommendations: GoalRecommendation[] = [];
-
-    // Filter goals that are eligible for activation
-    const eligibleGoals = goalConfig.goals.filter(goal => 
-      !state.completedGoals.includes(goal.id) &&
-      !state.declinedGoals.includes(goal.id) &&
-      this.checkGoalDependencies(goal, state) &&
-      this.checkGoalTiming(goal, state, interestAnalysis)
+    state: GoalState,
+    result: GoalOrchestrationResult,
+    eligibleGoals?: GoalDefinition[]  // NEW: Also check goals that are ABOUT to be activated
+  ): Promise<void> {
+    // Find active data collection goals PLUS eligible goals (that might be activated this turn)
+    // Include 'scheduling' type because it also captures data (preferredDate, preferredTime)
+    const goalsToCheck = eligibleGoals || goalConfig.goals;
+    const dataCollectionGoals = goalsToCheck.filter(
+      g => (g.type === 'data_collection' || g.type === 'collect_info' || g.type === 'scheduling') && 
+           (state.activeGoals.includes(g.id) || (eligibleGoals && eligibleGoals.includes(g)))
     );
 
-    // Sort by priority and evaluate each goal
-    const sortedGoals = this.sortGoalsByPriority(eligibleGoals, interestAnalysis);
-
-    for (const goal of sortedGoals) {
-      const recommendation = await this.evaluateGoal(goal, state, interestAnalysis, message);
-      if (recommendation) {
-        recommendations.push(recommendation);
-      }
-
-      // Respect maxActiveGoals limit
-      if (recommendations.filter(r => r.shouldPursue).length >= goalConfig.globalSettings.maxActiveGoals) {
-        break;
-      }
-    }
-
-    return recommendations;
-  }
-
-  /**
-   * Check if goal dependencies are satisfied
-   */
-  private checkGoalDependencies(goal: ConversationGoal, state: ConversationGoalState): boolean {
-    if (!goal.dependencies?.requires) return true;
+    console.log(`🔍 Checking data extraction for ${dataCollectionGoals.length} active/eligible data collection goals`);
     
-    return goal.dependencies.requires.every(requiredGoalId => 
-      state.completedGoals.includes(requiredGoalId)
-    );
+    for (const goal of dataCollectionGoals) {
+      if (!goal.dataToCapture?.fields) continue;
+
+      const fieldNames = this.getFieldNames(goal);
+      console.log(`🔍 Goal ${goal.id} needs: ${fieldNames.join(', ')}`);
+      console.log(`📊 Currently collected: ${Object.keys(state.collectedData).join(', ') || 'NONE'}`);
+
+      for (const fieldName of fieldNames) {
+        // Skip if already collected
+        if (state.collectedData[fieldName]) {
+          console.log(`✓ Field ${fieldName} already collected: ${state.collectedData[fieldName]}`);
+          continue;
+        }
+        
+        // Use simple extraction patterns (Phase B will enhance this with LLM)
+        const extractedValue = this.extractFieldValue(message, fieldName, goal.dataToCapture.validationRules);
+        
+        if (extractedValue) {
+          // HIGHLIGHT: Data extracted from user message
+          console.log('\n' + '💎'.repeat(32));
+          console.log(`💎 DATA CAPTURED: ${fieldName}`);
+          console.log(`💾 Value: ${extractedValue}`);
+          console.log('💎'.repeat(32) + '\n');
+          
+          state.collectedData[fieldName] = extractedValue;
+          result.extractedInfo[fieldName] = extractedValue;
+        } else {
+          console.log(`❌ Failed to extract ${fieldName} from: "${message.substring(0, 50)}..."`);
+        }
+      }
+
+      // Check if goal is complete (all required fields collected)
+      const isComplete = this.checkDataCollectionComplete(goal, state);
+      console.log(`🎯 Goal ${goal.id} completion check: ${isComplete ? 'COMPLETE ✅' : 'INCOMPLETE ❌'}`);
+      
+      if (isComplete && !state.completedGoals.includes(goal.id)) {
+        console.log(`✅ Goal completed: ${goal.id}`);
+        state.completedGoals.push(goal.id);
+        state.activeGoals = state.activeGoals.filter(id => id !== goal.id);
+        result.stateUpdates.newlyCompleted.push(goal.id);
+
+        // Execute goal actions
+        if (goal.actions?.onComplete) {
+          await this.executeGoalActions(goal, {
+            tenantId: state.tenantId,
+            userId: state.userId,
+            sessionId: state.sessionId,
+            collectedData: state.collectedData
+          });
+        }
+      }
+    }
   }
 
   /**
-   * Check if goal timing conditions are met
+   * Extract a single field value from message
+   * DISABLED: All regex extraction disabled - trusting LLM via intent detection
    */
-  private checkGoalTiming(
-    goal: ConversationGoal,
-    state: ConversationGoalState,
-    interestAnalysis: InterestAnalysis
-  ): boolean {
-    const timing = goal.timing;
+  private extractFieldValue(
+    message: string,
+    fieldName: string,
+    validationRules?: Record<string, any>
+  ): string | null {
+    console.log(`🔍 EXTRACTION DISABLED: Relying on LLM intent detection for field="${fieldName}"`);
+    
+    // ALL REGEX EXTRACTION DISABLED - LET THE LLM HANDLE IT
+    // The LLM in REQUEST #1 (Intent Detection) should extract all data
+    // This method is now a no-op placeholder
+    
+    return null;
+  }
 
-    // Check message count bounds
-    if (timing.minMessages && state.messageCount < timing.minMessages) return false;
-    if (timing.maxMessages && state.messageCount > timing.maxMessages) return false;
+  /**
+   * Validate extracted field against rules
+   * NOTE: Pattern validation disabled - trusting LLM to extract correct data types
+   */
+  private validateField(value: string, rules?: any): boolean {
+    if (!rules) return true;
 
-    // Check cooldown period
-    if (goal.tracking.lastAttempt && timing.cooldown) {
-      const lastAttemptTime = new Date(goal.tracking.lastAttempt).getTime();
-      const now = new Date().getTime();
-      const minutesSinceLastAttempt = (now - lastAttemptTime) / (1000 * 60);
-      
-      if (minutesSinceLastAttempt < timing.cooldown) return false;
-    }
-
-    // Check triggers if they exist
-    if (timing.triggers && timing.triggers.length > 0) {
-      return timing.triggers.some(trigger => this.evaluateTrigger(trigger, state, interestAnalysis));
-    }
+    // DISABLED: Let the LLM handle format validation
+    // The LLM is smart enough to know what's an email vs phone vs name
+    // if (rules.pattern) {
+    //   const regex = new RegExp(rules.pattern);
+    //   if (!regex.test(value)) {
+    //     console.log(`❌ Validation failed for "${value}" - pattern: ${rules.pattern}`);
+    //     return false;
+    //   }
+    // }
 
     return true;
   }
 
   /**
-   * Evaluate a goal trigger
+   * Helper: Get field names from goal (supports both old and new formats)
    */
-  private evaluateTrigger(
-    trigger: GoalTrigger,
-    state: ConversationGoalState,
-    interestAnalysis: InterestAnalysis
-  ): boolean {
-    const results = trigger.conditions.map(condition => 
-      this.stateManager.evaluateCondition(state, condition)
-    );
-
-    return trigger.logic === 'AND' 
-      ? results.every(r => r)
-      : results.some(r => r);
+  private getFieldNames(goal: GoalDefinition): string[] {
+    if (!goal.dataToCapture?.fields) return [];
+    
+    const fields = goal.dataToCapture.fields;
+    
+    // NEW FORMAT: Array of field objects
+    if (fields.length > 0 && typeof fields[0] === 'object' && 'name' in fields[0]) {
+      return (fields as Array<{ name: string }>).map(f => f.name);
+    }
+    
+    // OLD FORMAT: String array
+    return fields as string[];
   }
 
   /**
-   * Sort goals by priority and current context
+   * Helper: Get required field names from goal
    */
-  private sortGoalsByPriority(
-    goals: ConversationGoal[],
-    interestAnalysis: InterestAnalysis
-  ): ConversationGoal[] {
-    const priorityValues = { critical: 4, high: 3, medium: 2, low: 1 };
+  private getRequiredFieldNames(goal: GoalDefinition): string[] {
+    if (!goal.dataToCapture?.fields) return [];
     
-    return goals.sort((a, b) => {
-      const aPriority = priorityValues[a.priority];
-      const bPriority = priorityValues[b.priority];
-      
-      // Higher priority first
-      if (aPriority !== bPriority) {
-        return bPriority - aPriority;
-      }
-      
-      // If same priority, consider interest level
-      if (interestAnalysis.interestLevel === 'high') {
-        // Prioritize info collection when interest is high
-        if (a.type === 'collect_info' && b.type !== 'collect_info') return -1;
-        if (b.type === 'collect_info' && a.type !== 'collect_info') return 1;
-      }
-      
-      return 0;
+    const fields = goal.dataToCapture.fields;
+    
+    // NEW FORMAT: Array of field objects
+    if (fields.length > 0 && typeof fields[0] === 'object' && 'name' in fields[0]) {
+      return (fields as Array<{ name: string; required: boolean }>)
+        .filter(f => f.required)
+        .map(f => f.name);
+    }
+    
+    // OLD FORMAT: Use validationRules
+    const rules = goal.dataToCapture.validationRules || {};
+    return (fields as string[]).filter(fieldName => {
+      const fieldRules = rules[fieldName];
+      return fieldRules?.required !== false; // Default to required
     });
   }
 
   /**
-   * Evaluate a specific goal and create recommendation
+   * Check if a data collection goal is complete
    */
-  private async evaluateGoal(
-    goal: ConversationGoal,
-    state: ConversationGoalState,
-    interestAnalysis: InterestAnalysis,
-    message: string
-  ): Promise<GoalRecommendation | null> {
-    
-    // Calculate priority score
-    const priorityValues = { critical: 4, high: 3, medium: 2, low: 1 };
-    let priority = priorityValues[goal.priority];
-    
-    // Adjust priority based on interest and urgency
-    if (interestAnalysis.interestLevel === 'high') priority += 1;
-    if (interestAnalysis.urgencyLevel === 'urgent') priority += 0.5;
-    if (interestAnalysis.interestLevel === 'low') priority -= 1;
-    
-    // Determine approach
-    let approach: 'direct' | 'contextual' | 'subtle' = goal.approach.directness as any;
-    if (interestAnalysis.urgencyLevel === 'urgent') approach = 'direct';
-    if (interestAnalysis.interestLevel === 'low') approach = 'subtle';
+  private checkDataCollectionComplete(goal: GoalDefinition, state: GoalState): boolean {
+    if (!goal.dataToCapture?.fields) return false;
 
-    // Generate contextual message
-    const contextualMessage = this.generateGoalMessage(goal, approach, message, state);
+    // Get required field names (works with both old and new formats)
+    const requiredFields = this.getRequiredFieldNames(goal);
     
-    // Decide if we should pursue this goal now
-    const shouldPursue = this.shouldPursueGoal(goal, state, interestAnalysis, priority);
+    // Check if all REQUIRED fields are captured
+    for (const fieldName of requiredFields) {
+      if (!state.collectedData[fieldName]) {
+        console.log(`❌ Required field missing: ${fieldName}`);
+        return false;
+      }
+    }
     
+    console.log(`✅ All required fields captured for goal: ${requiredFields.join(', ')}`);
+    return true;
+  }
+
+  /**
+   * Check for information decline signals
+   */
+  private processInformationDeclines(
+    message: string,
+    state: GoalState,
+    result: GoalOrchestrationResult
+  ): void {
+    const declinePatterns = [
+      /no\s+thanks?/i,
+      /not\s+right\s+now/i,
+      /maybe\s+later/i,
+      /skip/i,
+      /don'?t\s+want\s+to/i,
+      /prefer\s+not\s+to/i
+    ];
+
+    const isDecline = declinePatterns.some(pattern => pattern.test(message));
+
+    if (isDecline && state.activeGoals.length > 0) {
+      // User is declining current goal(s)
+      const declinedGoal = state.activeGoals[0]; // Decline the first active goal
+      console.log(`❌ User declined goal: ${declinedGoal}`);
+      state.declinedGoals.push(declinedGoal);
+      state.activeGoals = state.activeGoals.filter(id => id !== declinedGoal);
+      result.stateUpdates.declined.push(declinedGoal);
+    }
+  }
+
+  /**
+   * PHASE A: Filter eligible goals based on triggers
+   */
+  private filterEligibleGoals(
+    goals: GoalDefinition[],
+    state: GoalState,
+    message: string,
+    channel?: MessageSource
+  ): GoalDefinition[] {
+    return goals.filter(goal => {
+      // Skip if already completed or declined
+      if (state.completedGoals.includes(goal.id)) {
+        return false;
+      }
+      if (state.declinedGoals.includes(goal.id)) {
+        return false;
+      }
+
+      // Check channel rules
+      if (channel && goal.channelRules?.[channel]?.skip) {
+        console.log(`⏭️ Skipping goal ${goal.id} for channel ${channel}`);
+        return false;
+      }
+
+      // Check triggers
+      if (goal.triggers) {
+        return this.evaluateTriggers(goal.triggers, state, message);
+      }
+
+      // Check legacy timing (if no triggers)
+      if (goal.timing) {
+        return this.evaluateLegacyTiming(goal.timing, state);
+      }
+
+      // No triggers, always eligible
+      return true;
+    });
+  }
+
+  /**
+   * PHASE A: Evaluate goal triggers (prerequisiteGoals, userSignals, messageCount)
+   */
+  private evaluateTriggers(
+    triggers: NonNullable<GoalDefinition['triggers']>,
+    state: GoalState,
+    message: string
+  ): boolean {
+    const results: boolean[] = [];
+
+    // Check prerequisiteGoals dependency (with backward compatibility for afterGoals)
+    const prerequisites = triggers.prerequisiteGoals || triggers.afterGoals;
+    if (prerequisites && prerequisites.length > 0) {
+      const dependenciesMet = prerequisites.every(requiredGoalId => {
+        // Support both full IDs and short name prefixes
+        // E.g., "collect_identity" matches "collect_identity_1764033358437"
+        return state.completedGoals.some(completedId => 
+          completedId === requiredGoalId || completedId.startsWith(requiredGoalId + '_')
+        );
+      });
+      console.log(`🔗 prerequisiteGoals check: ${dependenciesMet} (requires: ${prerequisites.join(', ')})`);
+      results.push(dependenciesMet);
+    }
+
+    // Check messageCount threshold
+    if (triggers.messageCount !== undefined) {
+      const thresholdMet = state.messageCount >= triggers.messageCount;
+      console.log(`📊 messageCount check: ${thresholdMet} (${state.messageCount} >= ${triggers.messageCount})`);
+      results.push(thresholdMet);
+    }
+
+    // Check userSignals (keywords)
+    if (triggers.userSignals && triggers.userSignals.length > 0) {
+      const lowerMessage = message.toLowerCase();
+      const signalDetected = triggers.userSignals.some(signal => 
+        lowerMessage.includes(signal.toLowerCase())
+      );
+      console.log(`🔍 userSignals check: ${signalDetected} (looking for: ${triggers.userSignals.join(', ')})`);
+      results.push(signalDetected);
+    }
+
+    // All conditions must be met (AND logic)
+    const allMet = results.length === 0 || results.every(r => r);
+    return allMet;
+  }
+
+  /**
+   * Evaluate legacy timing configuration (for backwards compatibility)
+   */
+  private evaluateLegacyTiming(
+    timing: NonNullable<GoalDefinition['timing']>,
+    state: GoalState
+  ): boolean {
+    if (timing.minMessages && state.messageCount < timing.minMessages) {
+      return false;
+    }
+    if (timing.maxMessages && state.messageCount > timing.maxMessages) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * PHASE A: Sort goals by order field and importance
+   */
+  private sortGoalsByOrderAndImportance(
+    goals: GoalDefinition[],
+    goalConfig: GoalConfiguration
+  ): GoalDefinition[] {
+    const importanceValues = { critical: 10, high: 7, medium: 4, low: 1 };
+
+    return goals.sort((a, b) => {
+      // Primary sort: order field (lower numbers first)
+      const orderA = a.order ?? 9999;
+      const orderB = b.order ?? 9999;
+      
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      // Secondary sort: importance (from priority field)
+      const importanceA = importanceValues[a.priority];
+      const importanceB = importanceValues[b.priority];
+      
+      return importanceB - importanceA;
+    });
+  }
+
+  /**
+   * PHASE A: Apply global constraints (strict ordering, max goals per turn)
+   */
+  private applyGlobalConstraints(
+    sortedGoals: GoalDefinition[],
+    goalConfig: GoalConfiguration,
+    state: GoalState
+  ): GoalDefinition[] {
+    let goalsToActivate = sortedGoals;
+
+    // Apply strict ordering
+    const strictOrdering = goalConfig.globalSettings.strictOrdering;
+    
+    if (strictOrdering === 0) {
+      // ✨ NEW: strictOrdering = 0 means "always active" mode
+      // All eligible goals are active for opportunistic data capture
+      console.log(`🌐 Always-active mode (strictOrdering = 0) - all eligible goals active`);
+      return goalsToActivate;
+    }
+    
+    if (strictOrdering && strictOrdering >= 7) {
+      // Strict mode: only activate the first goal (in order)
+      console.log(`🔒 Strict ordering enabled (${strictOrdering}/10) - limiting to 1 goal`);
+      
+      if (state.activeGoals.length > 0) {
+        // Continue with active goal, don't activate new ones
+        return [];
+      }
+      
+      goalsToActivate = sortedGoals.slice(0, 1);
+    }
+
+    // Apply max goals per turn
+    const maxGoalsPerTurn = goalConfig.globalSettings.maxGoalsPerTurn;
+    if (maxGoalsPerTurn && maxGoalsPerTurn > 0 && strictOrdering !== 0) {
+      console.log(`📏 Max goals per turn: ${maxGoalsPerTurn}`);
+      goalsToActivate = goalsToActivate.slice(0, maxGoalsPerTurn);
+    }
+
+    return goalsToActivate;
+  }
+
+  /**
+   * Generate a recommendation for a goal
+   */
+  private generateRecommendation(
+    goal: GoalDefinition,
+    state: GoalState,
+    goalConfig: GoalConfiguration
+  ): GoalRecommendation | null {
+    const importanceValues = { critical: 10, high: 7, medium: 4, low: 1 };
+    const priority = importanceValues[goal.priority];
+
+    // PHASE A: Use adherence level (1-10) to control persistence
+    const adherenceLevel = goal.adherence ?? 5; // Default to medium adherence
+    
+    // Increment attempt count
+    state.attemptCounts[goal.id] = (state.attemptCounts[goal.id] || 0) + 1;
+    const attemptCount = state.attemptCounts[goal.id];
+
+    console.log(`🎯 Goal ${goal.id}: adherence=${adherenceLevel}/10, attempts=${attemptCount}`);
+
+    // Check max attempts (if defined)
+    const maxAttempts = goal.behavior?.maxAttempts;
+    if (maxAttempts && attemptCount > maxAttempts) {
+      console.log(`⏸️ Max attempts reached for ${goal.id} (${attemptCount}/${maxAttempts})`);
+      
+      // Mark as declined to stop pursuing
+      if (!state.declinedGoals.includes(goal.id)) {
+        state.declinedGoals.push(goal.id);
+      }
+      
+      return null;
+    }
+
+    // Determine approach based on adherence and attempt count
+    let approach: 'direct' | 'contextual' | 'subtle' = 'contextual';
+    
+    if (adherenceLevel >= 8) {
+      approach = 'direct'; // High adherence = direct approach
+    } else if (adherenceLevel <= 3) {
+      approach = 'subtle'; // Low adherence = subtle approach
+    }
+
+    // Adjust tone based on backoff strategy and attempt count
+    if (attemptCount > 1 && goal.behavior?.backoffStrategy) {
+      approach = this.adjustApproachForBackoff(
+        approach,
+        goal.behavior.backoffStrategy,
+        attemptCount
+      );
+    }
+
+    // Generate message
+    const message = this.generateGoalMessage(goal, approach, state, attemptCount);
+
     return {
       goalId: goal.id,
       goal,
       priority,
-      reason: this.generatePursuitReason(goal, state, interestAnalysis),
+      adherenceLevel,
+      reason: this.generatePursuitReason(goal, attemptCount, adherenceLevel),
       approach,
-      message: contextualMessage,
-      shouldPursue
+      message,
+      shouldPursue: true,
+      attemptCount
     };
+  }
+
+  /**
+   * PHASE E: Adjust approach based on backoff strategy
+   */
+  private adjustApproachForBackoff(
+    baseApproach: 'direct' | 'contextual' | 'subtle',
+    backoffStrategy: 'gentle' | 'persistent' | 'aggressive',
+    attemptCount: number
+  ): 'direct' | 'contextual' | 'subtle' {
+    if (backoffStrategy === 'gentle') {
+      // Get softer with each attempt
+      if (attemptCount >= 3) return 'subtle';
+      if (attemptCount >= 2) return 'contextual';
+    } else if (backoffStrategy === 'aggressive') {
+      // Get more direct with each attempt
+      if (attemptCount >= 2) return 'direct';
+    }
+    // 'persistent' keeps the same approach
+    return baseApproach;
   }
 
   /**
    * Generate contextual message for goal pursuit
    */
   private generateGoalMessage(
-    goal: ConversationGoal,
+    goal: GoalDefinition,
     approach: 'direct' | 'contextual' | 'subtle',
-    userMessage: string,
-    state: ConversationGoalState
+    state: GoalState,
+    attemptCount: number
   ): string {
-    const valueProposition = goal.approach.valueProposition || '';
-    
-    switch (goal.id) {
-      case 'collect_name_first':
-        if (approach === 'direct') {
-          return `What's your name? ${valueProposition}`;
-        } else if (approach === 'contextual') {
-          return `${valueProposition} - what should I call you?`;
-        } else {
-          return `By the way, what's your first name so I can personalize this for you?`;
-        }
-        
-      case 'collect_email':
-        if (approach === 'direct') {
-          return `What's your email address? ${valueProposition}`;
-        } else if (approach === 'contextual') {
-          return `${valueProposition} - what's the best email to send that to?`;
-        } else {
-          return `By the way, ${valueProposition.toLowerCase()} if you'd like. What email should I use?`;
-        }
-        
-      case 'collect_phone':
-        if (approach === 'direct') {
-          return `What's your phone number? ${valueProposition}`;
-        } else if (approach === 'contextual') {
-          return `${valueProposition} - what's your phone number?`;
-        } else {
-          return `If you'd like text updates, what's your phone number?`;
-        }
-        
-      case 'collect_name':
-        if (approach === 'direct') {
-          return `What's your name? ${valueProposition}`;
-        } else if (approach === 'contextual') {
-          return `${valueProposition} - what should I call you?`;
-        } else {
-          return `I'd love to personalize this for you - what's your first name?`;
-        }
-        
-      case 'schedule_class':
-        if (approach === 'direct') {
-          return `Would you like to schedule a class? ${valueProposition}`;
-        } else if (approach === 'contextual') {
-          return `${valueProposition} - want to book your first class?`;
-        } else {
-          return `We have some great classes coming up if you're interested in trying one out.`;
-        }
-        
-      default:
-        return goal.approach.valueProposition || `Let me help you with ${goal.name.toLowerCase()}.`;
+    // Use custom messages if defined
+    if (goal.messages) {
+      if (attemptCount === 1 && goal.messages.request) {
+        return goal.messages.request;
+      } else if (attemptCount > 1 && goal.messages.followUp) {
+        return goal.messages.followUp;
+      }
     }
+
+    // Use behavior message if defined
+    if (goal.behavior?.message) {
+      return goal.behavior.message;
+    }
+
+    // Fallback: describe what we need
+    if (goal.dataToCapture?.fields) {
+      const fieldNames = this.getFieldNames(goal);
+      const fields = fieldNames.join(', ');
+      
+      if (approach === 'direct') {
+        return `I need your ${fields} to continue.`;
+      } else if (approach === 'contextual') {
+        return `To help you better, could you share your ${fields}?`;
+      } else {
+        return `By the way, it would be helpful to know your ${fields}.`;
+      }
+    }
+
+    return `Let's work on: ${goal.description}`;
   }
 
   /**
-   * Determine if we should pursue a goal right now
-   */
-  private shouldPursueGoal(
-    goal: ConversationGoal,
-    state: ConversationGoalState,
-    interestAnalysis: InterestAnalysis,
-    priority: number
-  ): boolean {
-    // Don't pursue if already active
-    if (state.activeGoals.includes(goal.id)) return false;
-    
-    // Always pursue critical goals if conditions are met
-    if (goal.priority === 'critical' && priority >= 4) return true;
-    
-    // Consider interest threshold
-    const interestValues = { low: 1, medium: 2, high: 3 };
-    const currentInterest = interestValues[interestAnalysis.interestLevel];
-    const minInterest = 3; // Require at least medium interest by default
-    
-    if (currentInterest < minInterest && goal.priority !== 'critical') return false;
-    
-    // Pursue if priority is high enough
-    return priority >= 3;
-  }
-
-  /**
-   * Generate reason for goal pursuit decision
+   * Generate reason for pursuing goal
    */
   private generatePursuitReason(
-    goal: ConversationGoal,
-    state: ConversationGoalState,
-    interestAnalysis: InterestAnalysis
+    goal: GoalDefinition,
+    attemptCount: number,
+    adherenceLevel: number
   ): string {
     const reasons = [];
     
     if (goal.priority === 'critical') reasons.push('critical priority');
-    if (interestAnalysis.interestLevel === 'high') reasons.push('high user interest');
-    if (interestAnalysis.urgencyLevel === 'urgent') reasons.push('user urgency detected');
-    if (state.messageCount >= (goal.timing.minMessages || 0)) reasons.push('timing conditions met');
+    if (adherenceLevel >= 8) reasons.push('high adherence');
+    if (attemptCount === 1) reasons.push('first attempt');
+    if (attemptCount > 1) reasons.push(`attempt ${attemptCount}`);
     
     return reasons.join(', ') || 'standard goal progression';
   }
 
   /**
-   * Check for goal completion triggers
+   * Check for goal completion triggers (combos, etc.)
    */
   private checkCompletionTriggers(
     goalConfig: GoalConfiguration,
-    state: ConversationGoalState,
+    state: GoalState,
     result: GoalOrchestrationResult
   ): void {
-    
+    // Safety check: ensure completionTriggers exists
+    if (!goalConfig.completionTriggers) {
+      return;
+    }
+
     // Check custom combinations
     if (goalConfig.completionTriggers.customCombinations) {
       for (const combo of goalConfig.completionTriggers.customCombinations) {
@@ -537,6 +718,7 @@ export class GoalOrchestrator {
         );
         
         if (allCompleted && !result.triggeredIntents.includes(combo.triggerIntent)) {
+          console.log(`🎉 Goal combo triggered: ${combo.triggerIntent}`);
           result.triggeredIntents.push(combo.triggerIntent);
         }
       }
@@ -550,22 +732,165 @@ export class GoalOrchestrator {
       );
       
       if (allCriticalComplete && !result.triggeredIntents.includes(goalConfig.completionTriggers.allCriticalComplete)) {
+        console.log(`🎉 All critical goals complete!`);
         result.triggeredIntents.push(goalConfig.completionTriggers.allCriticalComplete);
       }
     }
   }
 
   /**
+   * Execute actions when a goal completes
+   */
+  async executeGoalActions(
+    goal: GoalDefinition,
+    context: {
+      tenantId: string;
+      channelId?: string;
+      userId: string;
+      sessionId: string;
+      collectedData: Record<string, any>;
+    }
+  ): Promise<void> {
+    if (!goal.actions?.onComplete || !this.eventBridgeService) {
+      return;
+    }
+
+    console.log(`🎯 Executing ${goal.actions.onComplete.length} actions for goal: ${goal.id}`);
+
+    for (const action of goal.actions.onComplete) {
+      try {
+        await this.executeAction(action, goal.id, context);
+      } catch (error) {
+        console.error(`❌ Failed to execute action ${action.type} for goal ${goal.id}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Execute a single action
+   */
+  private async executeAction(
+    action: ActionTrigger,
+    goalId: string,
+    context: {
+      tenantId: string;
+      channelId?: string;
+      userId: string;
+      sessionId: string;
+      collectedData: Record<string, any>;
+    }
+  ): Promise<void> {
+    console.log('\x1b[33m╔══════════════════════════════════════════════════════════════╗\x1b[0m');
+    console.log('\x1b[33m║  🎯 GOAL ACTION TRIGGERED                                    ║\x1b[0m');
+    console.log('\x1b[33m╚══════════════════════════════════════════════════════════════╝\x1b[0m');
+    console.log(`\x1b[36m📌 Goal ID:     \x1b[0m${goalId}`);
+    console.log(`\x1b[36m⚡ Action Type: \x1b[0m${action.type}`);
+    console.log(`\x1b[36m🏷️  Event Name:  \x1b[0m${action.eventName || this.getDefaultEventName(action.type)}`);
+
+    const eventName = action.eventName || this.getDefaultEventName(action.type);
+    const payload = {
+      tenantId: context.tenantId,
+      channelId: context.channelId,
+      userId: context.userId,
+      sessionId: context.sessionId,
+      goalId,
+      timestamp: new Date().toISOString(),
+      ...action.payload,
+      // Include collected data for relevant actions
+      ...(action.type === 'convert_anonymous_to_lead' && { contactInfo: context.collectedData })
+    };
+
+    console.log(`\x1b[36m📦 Action Payload:\x1b[0m`);
+    console.log(JSON.stringify(action.payload, null, 2));
+    
+    if (action.type === 'convert_anonymous_to_lead') {
+      console.log(`\x1b[36m👤 Collected Contact Info:\x1b[0m`);
+      console.log(JSON.stringify(context.collectedData, null, 2));
+    }
+
+    await this.eventBridgeService.publishCustomEvent(
+      'kxgen.agent.goals',
+      eventName,
+      payload
+    );
+
+    console.log(`\x1b[32m✅ Goal action completed: ${eventName}\x1b[0m`);
+    console.log('\x1b[33m══════════════════════════════════════════════════════════════\x1b[0m\n');
+  }
+
+  /**
+   * Get default event name for action type
+   */
+  private getDefaultEventName(actionType: string): string {
+    const defaults: Record<string, string> = {
+      'convert_anonymous_to_lead': 'lead.contact_captured',
+      'trigger_scheduling_flow': 'appointment.requested',
+      'send_notification': 'notification.send',
+      'update_crm': 'crm.update_requested',
+      'custom': 'custom.action'
+    };
+    return defaults[actionType] || 'goal.action';
+  }
+
+  /**
+   * Get or initialize goal state
+   * Now supports channel state for persistent tracking
+   */
+  private getOrInitState(
+    sessionId: string, 
+    userId: string, 
+    tenantId: string,
+    channelState?: ChannelWorkflowState
+  ): GoalState {
+    const key = `${tenantId}:${sessionId}:${userId}`;
+    
+    if (!this.goalStates.has(key)) {
+      // Initialize from channel state if available
+      if (channelState) {
+        this.goalStates.set(key, {
+          sessionId,
+          userId,
+          tenantId,
+          messageCount: channelState.messageCount,
+          completedGoals: [...channelState.completedGoals],
+          activeGoals: [...channelState.activeGoals],
+          declinedGoals: [],
+          attemptCounts: {},
+          collectedData: { ...channelState.capturedData }
+        });
+        console.log(`📊 Initialized state from channel state: ${channelState.completedGoals.length} completed goals`);
+      } else {
+        // Legacy: fresh state
+        this.goalStates.set(key, {
+          sessionId,
+          userId,
+          tenantId,
+          messageCount: 0,
+          completedGoals: [],
+          activeGoals: [],
+          declinedGoals: [],
+          attemptCounts: {},
+          collectedData: {}
+        });
+      }
+    }
+    
+    return this.goalStates.get(key)!;
+  }
+
+  /**
    * Get current goal state for debugging
    */
-  getGoalState(sessionId: string, userId: string, tenantId: string): any {
-    return this.stateManager.getStateSummary(sessionId, userId, tenantId);
+  getGoalState(sessionId: string, userId: string, tenantId: string): GoalState | undefined {
+    const key = `${tenantId}:${sessionId}:${userId}`;
+    return this.goalStates.get(key);
   }
 
   /**
    * Reset goal state (for testing)
    */
   resetGoalState(sessionId: string, userId: string, tenantId: string): void {
-    this.stateManager.clearState(sessionId, userId, tenantId);
+    const key = `${tenantId}:${sessionId}:${userId}`;
+    this.goalStates.delete(key);
   }
 }

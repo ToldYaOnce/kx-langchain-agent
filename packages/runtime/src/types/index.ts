@@ -212,3 +212,6 @@ export interface AgentResponse {
     details?: any;
   };
 }
+
+// Export workflow state types from dynamodb-schemas
+export type { ChannelWorkflowState, ChannelItem } from "./dynamodb-schemas.js";

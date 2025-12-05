@@ -56,4 +56,33 @@ export declare class EventBridgeService {
         durationMs?: number;
         metadata?: Record<string, any>;
     }): AgentTraceEvent;
+    /**
+     * Publish LLM usage event for cost tracking
+     */
+    publishLLMUsage(usage: LLMUsageEvent): Promise<void>;
+}
+/**
+ * LLM Usage Event for cost tracking
+ */
+export interface LLMUsageEvent {
+    /** Tenant identifier */
+    tenantId: string;
+    /** Channel/conversation identifier */
+    channelId?: string;
+    /** Message source (chat, sms, email, etc.) */
+    source: string;
+    /** Type of LLM request */
+    requestType: 'intent_detection' | 'conversational_response' | 'follow_up_question' | 'verification_message' | 'error_recovery' | 'engagement_question';
+    /** Model identifier */
+    model: string;
+    /** Input tokens consumed */
+    inputTokens: number;
+    /** Output tokens generated */
+    outputTokens: number;
+    /** Total tokens (input + output) */
+    totalTokens: number;
+    /** Timestamp */
+    timestamp: string;
+    /** Optional: Estimated cost in USD (if rate available) */
+    estimatedCostUsd?: number;
 }

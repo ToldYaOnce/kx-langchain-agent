@@ -3,6 +3,7 @@ import { ConversationChain } from 'langchain/chains';
 import { BufferMemory } from 'langchain/memory';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { BaseMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
+import { z } from 'zod';
 import { KxDynamoChatHistory } from './chat-history.js';
 import { MemoryChatHistory } from './memory-chat-history.js';
 import { DynamoDBService } from './dynamodb.js';
@@ -15,7 +16,45 @@ import { GoalOrchestrator, type GoalOrchestrationResult } from './goal-orchestra
 import { ActionTagProcessor, type ActionTagConfig } from './action-tag-processor.js';
 import { IntentActionRegistry, type IntentActionContext, type IntentActionResult } from './intent-action-registry.js';
 import { PersonaStorage } from './persona-storage.js';
-import type { AgentContext, RuntimeConfig, MessageSource, AgentResponse } from '../types/index.js';
+import { ChannelStateService } from './channel-state-service.js';
+import { VerbosityHelper } from './verbosity-config.js';
+import { GoalConfigHelper, type EffectiveGoalConfig } from './goal-config-helper.js';
+import { MessageProcessor, type ProcessingContext, type ProcessingResult } from './message-processor.js';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { AgentContext, RuntimeConfig, MessageSource, AgentResponse, ChannelWorkflowState } from '../types/index.js';
+
+// Zod schema for structured sentence output
+const SentenceListSchema = z.object({
+  sentences: z.array(z.string().min(1)).describe('Array of complete, standalone sentences')
+});
+
+export type SentenceList = z.infer<typeof SentenceListSchema>;
+
+// Zod schema for intent detection (REQUEST #1)
+const IntentDetectionSchema = z.object({
+  primaryIntent: z.enum([
+    'company_info_request',
+    'workflow_data_capture',
+    'general_conversation',
+    'objection',
+    'scheduling',
+    'complaint',
+    'question'
+  ]).describe('Primary intent category of the user message'),
+  
+  detectedWorkflowIntent: z.string().nullable().describe('Specific workflow field detected (e.g., "email", "phone", "firstName") or null if none'),
+  
+  companyInfoRequested: z.array(z.string()).nullable().describe('Specific company info fields requested (e.g., ["hours", "pricing", "location"]) or null if none'),
+  
+  requiresDeepContext: z.boolean().describe('True if this conversation needs more than the last 10 messages for proper context'),
+  
+  conversationComplexity: z.enum(['simple', 'moderate', 'complex']).describe('Overall complexity of the user query'),
+  
+  detectedEmotionalTone: z.enum(['positive', 'neutral', 'frustrated', 'urgent']).optional().describe('Emotional tone of the message')
+});
+
+export type IntentDetectionResult = z.infer<typeof IntentDetectionSchema>;
 
 export interface AgentServiceConfig extends RuntimeConfig {
   dynamoService?: DynamoDBService;
@@ -40,6 +79,8 @@ export class AgentService {
   private actionTagProcessor: ActionTagProcessor;
   private intentActionRegistry: IntentActionRegistry;
   private personaStorage?: PersonaStorage;
+  private channelStateService?: ChannelStateService;
+  private messageTrackingService?: any; // MessageTrackingService (avoid circular import)
 
   constructor(config: AgentServiceConfig) {
     this.config = config;
@@ -52,7 +93,8 @@ export class AgentService {
     this.intentService = new IntentService();
     
     // Initialize goal orchestrator
-    this.goalOrchestrator = new GoalOrchestrator();
+    // @ts-ignore - Type definitions outdated, GoalOrchestrator now accepts eventBridgeService
+    this.goalOrchestrator = new GoalOrchestrator(config.eventBridgeService);
     
     // Initialize action tag processor with default config (will be updated per persona)
     this.actionTagProcessor = new ActionTagProcessor({
@@ -67,6 +109,26 @@ export class AgentService {
     // Initialize persona storage (use provided or create with fallback)
     this.personaStorage = config.personaStorage;
     
+    // Initialize channel state service for workflow tracking
+    // Can be injected from CLI (LocalChannelStateService) or created from DynamoDB
+    if ((config as any).channelStateService) {
+      this.channelStateService = (config as any).channelStateService;
+      console.log(`📊 Channel state service initialized (injected - local mode)`);
+    } else if (config.dynamoService) {
+      const dynamoClient = new DynamoDBClient({ region: config.awsRegion });
+      const docClient = DynamoDBDocumentClient.from(dynamoClient, {
+        marshallOptions: {
+          removeUndefinedValues: true,
+        },
+      });
+      const workflowStateTable = process.env.WORKFLOW_STATE_TABLE || 'KxGen-agent-workflow-state';
+      this.channelStateService = new ChannelStateService(docClient, workflowStateTable);
+      console.log(`📊 Channel state service initialized (table: ${workflowStateTable})`);
+      
+      // Initialize message tracking service for interruption handling (lazy loaded)
+      // Will be initialized on first use in processMessageChunked
+    }
+    
     // Persona will be loaded per-request with company info substitution
     this.persona = {} as AgentPersona; // Will be loaded per-request
     
@@ -76,11 +138,87 @@ export class AgentService {
   }
 
   /**
+   * 🏢 Build selective company info section (only requested fields)
+   */
+  private buildSelectiveCompanyInfo(
+    companyInfo: CompanyInfo | undefined,
+    requestedFields: string[] | null
+  ): string {
+    if (!companyInfo || !requestedFields || requestedFields.length === 0) {
+      return '';
+    }
+
+    let companyInfoSection = '\n\n📋 COMPANY INFORMATION:\n';
+    
+    // Map of field names to company info properties
+    const fieldMap: Record<string, () => string> = {
+      'hours': () => {
+        if (!companyInfo.businessHours) return '';
+        let hoursText = '\n📅 BUSINESS HOURS (CRITICAL - USE THESE EXACT HOURS):\n';
+        const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        days.forEach(day => {
+          const hours = (companyInfo.businessHours as any)?.[day];
+          if (hours && hours.length > 0) {
+            hoursText += `• ${day.charAt(0).toUpperCase() + day.slice(1)}: ${hours.map((h: any) => `${h.from}-${h.to}`).join(', ')}\n`;
+          }
+        });
+        hoursText += '\n⚠️ IMPORTANT: When asked about hours, ALWAYS use these exact times. Do NOT make up hours or say "24/7" unless explicitly shown above.\n';
+        return hoursText;
+      },
+      'contact': () => {
+        let contactText = '\n📞 CONTACT INFORMATION:\n';
+        if (companyInfo.phone) contactText += `• Phone: ${companyInfo.phone}\n`;
+        if (companyInfo.email) contactText += `• Email: ${companyInfo.email}\n`;
+        if (companyInfo.website) contactText += `• Website: ${companyInfo.website}\n`;
+        return contactText;
+      },
+      'location': () => {
+        if (!companyInfo.address?.street && !companyInfo.address?.city) return '';
+        let locationText = '\n📍 LOCATION:\n';
+        if (companyInfo.address.street) locationText += `${companyInfo.address.street}\n`;
+        if (companyInfo.address.city && companyInfo.address.state && companyInfo.address.zipCode) {
+          locationText += `${companyInfo.address.city}, ${companyInfo.address.state} ${companyInfo.address.zipCode}\n`;
+        }
+        return locationText;
+      },
+      'services': () => {
+        if (!companyInfo.products) return '';
+        return `\n💼 SERVICES/PRODUCTS:\n${companyInfo.products}\n`;
+      },
+      'pricing': () => {
+        // Pricing typically requires contact info, so we might not include it here
+        // But if it's specifically requested and available in description/benefits
+        return '';
+      },
+      'staff': () => {
+        // Staff info would come from persona data, not company info
+        return '';
+      }
+    };
+
+    // Build only the requested sections
+    requestedFields.forEach(field => {
+      const fieldLower = field.toLowerCase();
+      if (fieldMap[fieldLower]) {
+        const section = fieldMap[fieldLower]();
+        if (section) {
+          companyInfoSection += section;
+        }
+      }
+    });
+
+    return companyInfoSection;
+  }
+
+  /**
+   * 🎯 REQUEST #1: Detect intent and determine context needs
+   */
+  /**
    * Process an agent context and generate a response
    * @param context - The agent context
    * @param existingHistory - Optional chat history (for CLI/local use)
    */
-  async processMessage(context: AgentContext, existingHistory?: BaseMessage[]): Promise<string> {
+  async processMessage(context: AgentContext, existingHistory?: BaseMessage[]): Promise<{ response: string; followUpQuestion?: string }> {
     const startTime = Date.now();
     
     try {
@@ -112,81 +250,20 @@ export class AgentService {
       }
 
       // Configure model maxTokens based on verbosity trait
-      // Linear progression: start at 40, add 20 per level
       const verbosity = (currentPersona as any)?.personalityTraits?.verbosity || 5;
-      let maxTokens: number;
-      let temperature: number;
+      console.log(`🎚️ Using verbosity: ${verbosity}`);
       
-      switch (verbosity) {
-        case 1:
-          maxTokens = 40;   // ~1 sentence
-          temperature = 0.3;
-          break;
-        case 2:
-          maxTokens = 60;   // ~1-2 sentences
-          temperature = 0.3;
-          break;
-        case 3:
-          maxTokens = 80;   // ~2 sentences
-          temperature = 0.4;
-          break;
-        case 4:
-          maxTokens = 100;  // ~2-3 sentences
-          temperature = 0.4;
-          break;
-        case 5:
-          maxTokens = 120;  // ~3 sentences
-          temperature = 0.5;
-          break;
-        case 6:
-          maxTokens = 140;  // ~3-4 sentences
-          temperature = 0.5;
-          break;
-        case 7:
-          maxTokens = 160;  // ~4 sentences
-          temperature = 0.6;
-          break;
-        case 8:
-          maxTokens = 180;  // ~4-5 sentences
-          temperature = 0.6;
-          break;
-        case 9:
-          maxTokens = 200;  // ~5-6 sentences
-          temperature = 0.7;
-          break;
-        case 10:
-          maxTokens = 220;  // ~6-7 sentences ("lecture mode")
-          temperature = 0.7;
-          break;
-        default:
-          maxTokens = 120;  // Default to 5
-          temperature = 0.5;
-      }
+      // Get verbosity configuration from helper
+      const verbosityConfig = VerbosityHelper.getConfig(verbosity);
+      const { maxTokens, temperature, maxSentences } = verbosityConfig;
       
-      // 👉 Decide if we'll add a question via second LLM call
-      const questionRatio = (currentPersona as any)?.personalityTraits?.questionRatio;
-      let shouldAddQuestion = false;
-      const QUESTION_TOKEN_RESERVE = 20; // Reserve 20 tokens for the follow-up question
+      console.log(`🎚️ Verbosity config: ${verbosityConfig.description}`);
+      console.log(`🎚️ Setting maxTokens=${maxTokens}, temperature=${temperature}, maxSentences=${maxSentences}`);
       
-      if (questionRatio !== undefined) {
-        const probability = questionRatio / 10;        // 1–10 → 0.1–1.0
-        const isAlwaysAsk = questionRatio >= 9;        // 9–10 = always enforce
-        shouldAddQuestion = isAlwaysAsk || Math.random() < probability;
-        
-        console.log(
-          `❓ Question behavior for this turn: ratio=${questionRatio}/10, ` +
-          `prob=${Math.round(probability * 100)}%, alwaysAsk=${isAlwaysAsk}, ` +
-          `willAddQuestion=${shouldAddQuestion}`
-        );
-        
-        // If we'll add a question, reserve 20 tokens from the main response
-        if (shouldAddQuestion) {
-          maxTokens = Math.max(30, maxTokens - QUESTION_TOKEN_RESERVE); // Don't go below 30
-          console.log(`❓ Reserved ${QUESTION_TOKEN_RESERVE} tokens for question, main response maxTokens reduced to ${maxTokens}`);
-        }
-      }
-      
-      console.log(`🎚️ Setting maxTokens=${maxTokens}, temperature=${temperature} based on verbosity=${verbosity}`);
+      // 👉 Question generation disabled - using ONLY goal-driven questions
+      // Goals will provide all questions via the workflow
+      const shouldAddQuestion = false;
+      console.log(`❓ Question generation: DISABLED (using goal-driven questions only)`);
       
       // Recreate model with verbosity-aware maxTokens and temperature
       this.model = new ChatBedrockConverse({
@@ -194,25 +271,75 @@ export class AgentService {
         region: this.config.awsRegion,
         temperature,
         maxTokens,
+        max_tokens: maxTokens, // Also pass snake_case version for Bedrock API
       } as any);
+
+      // ═══════════════════════════════════════════════════════════════════
+      // 🎯 THREE-REQUEST ARCHITECTURE
+      // ═══════════════════════════════════════════════════════════════════
+      // REQUEST #1: Intent Detection & Context Analysis (performed first)
+      // REQUEST #2: Conversational Response (uses results from #1)
+      // REQUEST #3: Follow-Up Generation (verification or workflow question)
+      // ═══════════════════════════════════════════════════════════════════
 
       // Run goal orchestration to manage lead qualification
       let goalResult: GoalOrchestrationResult | null = null;
-      console.log(`🔍 Goal config enabled: ${currentPersona.goalConfiguration?.enabled}, goals: ${currentPersona.goalConfiguration?.goals?.length || 0}`);
       
-      if (currentPersona.goalConfiguration?.enabled) {
+      // Load channel workflow state (Phase C: Persistent state)
+      let channelState: ChannelWorkflowState | undefined;
+      if (this.channelStateService && context.conversation_id) {
         try {
+          channelState = await this.channelStateService.loadWorkflowState(context.conversation_id, context.tenantId);
+          console.log(`📊 Loaded channel state: ${JSON.stringify(channelState, null, 2)}`);
+          
+          // Increment message count
+          channelState = await this.channelStateService.incrementMessageCount(context.conversation_id, context.tenantId);
+        } catch (error) {
+          console.error('❌ Error loading channel state:', error);
+        }
+      }
+
+      // Determine effective goal configuration (company-level takes precedence over persona-level)
+      const effectiveGoalConfig = GoalConfigHelper.getEffectiveConfig(
+        this.config.companyInfo,
+        currentPersona
+      );
+      
+      console.log(`🔍 Checking goal config - enabled: ${effectiveGoalConfig.enabled}, goals: ${effectiveGoalConfig.goals?.length || 0}`);
+      
+      if (GoalConfigHelper.isEnabled(effectiveGoalConfig)) {
+        const goalSource = GoalConfigHelper.getSourceDescription(effectiveGoalConfig);
+        console.log(`🔍 Goal orchestration enabled (${goalSource}): ${effectiveGoalConfig.goals.length} goals configured`);
+      } else {
+        console.log(`⚠️ Goal orchestration DISABLED - enabled: ${effectiveGoalConfig.enabled}, goals: ${effectiveGoalConfig.goals?.length || 0}`);
+      }
+      
+      if (GoalConfigHelper.isEnabled(effectiveGoalConfig)) {
+        
+        try {
+          // Pass empty history for now - will be enhanced in Phase C with proper state loading
+          const conversationTexts: string[] = [];
+
           goalResult = await this.goalOrchestrator.orchestrateGoals(
             context.text,
             context.conversation_id || 'default',
             context.email_lc,
             context.tenantId,
-            currentPersona.goalConfiguration
+            effectiveGoalConfig,
+            conversationTexts,
+            context.source as any, // channel
+            channelState // Pass the channel state!
           );
 
-          // Log goal orchestration results
+          // Log goal orchestration results with HIGHLIGHT
           if (goalResult.extractedInfo && Object.keys(goalResult.extractedInfo).length > 0) {
-            console.log(`📧 Extracted info:`, goalResult.extractedInfo);
+            console.log('\n' + '═'.repeat(64));
+            console.log('🎯 INTENT CAPTURED - DATA EXTRACTED');
+            console.log('═'.repeat(64));
+            for (const [field, value] of Object.entries(goalResult.extractedInfo)) {
+              console.log(`  ✅ ${field}: ${JSON.stringify(value)}`);
+            }
+            console.log('═'.repeat(64) + '\n');
           }
           
           if (goalResult.recommendations.length > 0) {
@@ -237,18 +364,264 @@ export class AgentService {
               }
             }
           }
+          
+          // ═══════════════════════════════════════════════════════════════════
+          // 🚀 FAST-TRACK DETECTION
+          // ═══════════════════════════════════════════════════════════════════
+          // Fast-track triggers when:
+          // 1. User's INTENT is "scheduling" (they want to book), OR
+          // 2. User provides data that belongs to the PRIMARY goal
+          const primaryGoal = effectiveGoalConfig.goals.find(g => g.isPrimary);
+          
+          if (primaryGoal) {
+            let shouldFastTrack = false;
+            let fastTrackReason = '';
+            
+            // Check 1: Did user provide data for the primary goal's fields?
+            if (goalResult.extractedInfo && Object.keys(goalResult.extractedInfo).length > 0) {
+              const primaryGoalFields = this.getFieldNamesForGoal(primaryGoal);
+              const extractedFieldsForPrimary = Object.keys(goalResult.extractedInfo)
+                .filter(field => primaryGoalFields.includes(field));
+              
+              if (extractedFieldsForPrimary.length > 0) {
+                shouldFastTrack = true;
+                fastTrackReason = `User provided data for primary goal fields: ${extractedFieldsForPrimary.join(', ')}`;
+              }
+            }
+            
+            // Check 2: Is the primary goal a scheduling goal AND user's intent is scheduling?
+            // This catches "I want to schedule" even if no specific date/time was provided
+            if (!shouldFastTrack && primaryGoal.type === 'scheduling' && context.text) {
+              // Check if user message indicates scheduling intent
+              const schedulingKeywords = [
+                'schedule', 'book', 'appointment', 'come in', 'visit', 'class', 
+                'session', 'sign up', 'register', 'available', 'open', 'times', 
+                'when can', 'free class', 'first class', 'trial'
+              ];
+              const messageLower = context.text.toLowerCase();
+              const hasSchedulingIntent = schedulingKeywords.some(keyword => messageLower.includes(keyword));
+              
+              if (hasSchedulingIntent) {
+                shouldFastTrack = true;
+                fastTrackReason = `User expressed scheduling intent in message`;
+              }
+            }
+            
+            if (shouldFastTrack) {
+              console.log(`\n${'🚀'.repeat(20)}`);
+              console.log(`🚀 FAST-TRACK DETECTED!`);
+              console.log(`🚀 Reason: ${fastTrackReason}`);
+              console.log(`🚀 Primary goal: ${primaryGoal.name}`);
+              console.log(`${'🚀'.repeat(20)}\n`);
+              
+              // Get prerequisites for the primary goal
+              const prerequisiteIds = (primaryGoal as any).prerequisites 
+                || primaryGoal.triggers?.prerequisiteGoals 
+                || [];
+              console.log(`🚀 Prerequisites required: ${prerequisiteIds.length > 0 ? prerequisiteIds.join(', ') : 'none'}`);
+              
+              // 🔥 SORT prerequisites by their workflow ORDER (not by array position)
+              const prerequisiteGoals = prerequisiteIds
+                .map((id: string) => effectiveGoalConfig.goals.find(g => g.id === id))
+                .filter((g: any) => g !== undefined);
+              
+              const sortedPrerequisites = prerequisiteGoals
+                .sort((a: any, b: any) => (a.order || 999) - (b.order || 999))
+                .map((g: any) => g.id);
+              
+              console.log(`🚀 Prerequisites sorted by workflow order: ${sortedPrerequisites.join(' → ')}`);
+              
+              // Determine which goals to activate (sorted prerequisites + primary)
+              const fastTrackGoalIds = [...sortedPrerequisites, primaryGoal.id];
+              
+              // Filter out already completed goals
+              const completedGoals = channelState?.completedGoals || [];
+              const goalsToActivate = fastTrackGoalIds.filter(id => !completedGoals.includes(id));
+              
+              // Find the first incomplete goal in the fast-track sequence
+              const nextFastTrackGoal = goalsToActivate[0];
+              
+              if (nextFastTrackGoal) {
+                console.log(`🚀 Fast-tracking: Activating ${nextFastTrackGoal} (skipping non-essential goals)`);
+                goalResult.activeGoals = [nextFastTrackGoal];
+                
+                // Persist the fast-track goal activation and sequence
+                if (this.channelStateService && context.conversation_id) {
+                  await this.channelStateService.setActiveGoals(
+                    context.conversation_id,
+                    [nextFastTrackGoal],
+                    context.tenantId
+                  );
+                  await this.channelStateService.updateWorkflowState(
+                    context.conversation_id,
+                    { fastTrackGoals: fastTrackGoalIds },
+                    context.tenantId
+                  );
+                }
+              }
+            }
+          }
+
+          // Phase C: Save extracted data to channel state
+          if (this.channelStateService && context.conversation_id) {
+            try {
+              // Save each extracted field
+              for (const [fieldName, fieldValue] of Object.entries(goalResult.extractedInfo || {})) {
+                await this.channelStateService.markFieldCaptured(
+                  context.conversation_id,
+                  fieldName,
+                  fieldValue,
+                  context.tenantId
+                );
+              }
+              
+              // Update active goals
+              console.log(`🎯 Active goals from orchestrator: ${JSON.stringify(goalResult.activeGoals)}`);
+              if (goalResult.activeGoals.length > 0) {
+                await this.channelStateService.setActiveGoals(
+                  context.conversation_id,
+                  goalResult.activeGoals,
+                  context.tenantId
+                );
+              }
+              
+              // Mark completed goals
+              console.log(`✅ Newly completed goals: ${JSON.stringify(goalResult.stateUpdates.newlyCompleted)}`);
+              for (const completedGoalId of goalResult.stateUpdates.newlyCompleted) {
+                await this.channelStateService.markGoalCompleted(
+                  context.conversation_id,
+                  completedGoalId,
+                  context.tenantId
+                );
+              }
+              
+              // Check if all contact info is complete
+              const updatedState = await this.channelStateService.loadWorkflowState(context.conversation_id, context.tenantId);
+              if (this.channelStateService.isContactInfoComplete(updatedState)) {
+                const eventName = 'lead.contact_captured';
+                
+                // Only emit if we haven't already
+                if (!this.channelStateService.hasEventBeenEmitted(updatedState, eventName)) {
+                  console.log(`🎉 ALL CONTACT INFO COMPLETE! Emitting ${eventName}`);
+                  
+                  if (this.config.eventBridgeService) {
+                    // Publish custom event (not using publishAgentTrace since detail structure differs)
+                    const { EventBridgeClient, PutEventsCommand } = await import('@aws-sdk/client-eventbridge');
+                    const ebClient = new EventBridgeClient({ region: this.config.awsRegion });
+                    
+                    await ebClient.send(new PutEventsCommand({
+                      Entries: [{
+                        Source: 'kxgen.agent',
+                        DetailType: eventName,
+                        Detail: JSON.stringify({
+                          tenantId: context.tenantId,
+                          channelId: context.conversation_id,
+                          email: updatedState.capturedData.email,
+                          phone: updatedState.capturedData.phone,
+                          firstName: updatedState.capturedData.firstName,
+                          lastName: updatedState.capturedData.lastName,
+                          timestamp: new Date().toISOString()
+                        }),
+                        EventBusName: this.config.outboundEventBusName
+                      }]
+                    }));
+                    
+                    console.log(`📤 Event published: ${eventName}`);
+                    
+                    // Record that we emitted this event
+                    await this.channelStateService.recordEventEmitted(context.conversation_id, eventName, context.tenantId);
+                  }
+                }
+              }
+              
+              console.log(`💾 Channel state saved successfully`);
+            } catch (error) {
+              console.error('❌ Error saving channel state:', error);
+            }
+          }
+
+          // Execute actions for newly completed goals
+          if (goalResult.stateUpdates?.newlyCompleted && goalResult.stateUpdates.newlyCompleted.length > 0) {
+            console.log(`✅ Newly completed goals: ${goalResult.stateUpdates.newlyCompleted.join(', ')}`);
+            
+            for (const completedGoalId of goalResult.stateUpdates.newlyCompleted) {
+              // Find the goal definition using helper
+              const completedGoal = GoalConfigHelper.findGoal(effectiveGoalConfig, completedGoalId);
+              
+              if (completedGoal && completedGoal.actions?.onComplete) {
+                // Execute goal actions (publishes events)
+                await (this.goalOrchestrator as any).executeGoalActions(completedGoal, {
+                  tenantId: context.tenantId,
+                  channelId: context.conversation_id,
+                  userId: context.email_lc,
+                  sessionId: context.conversation_id || 'default',
+                  collectedData: goalResult.extractedInfo || {}
+                });
+              }
+            }
+          }
 
         } catch (error) {
           console.warn('Goal orchestration error:', error);
         }
       }
 
+      // Check sharing permissions BEFORE processing (intercept restricted questions)
+      if (this.config.companyInfo?.responseGuidelines) {
+        const { normalizeSharingPermissions, canShareInformation } = require('./sharing-permissions-utils');
+        const normalized = normalizeSharingPermissions(
+          this.config.companyInfo.responseGuidelines.informationCategories,
+          this.config.companyInfo.responseGuidelines.sharingPermissions
+        );
+        
+        // Check if user is asking about restricted information
+        const messageLower = context.text.toLowerCase();
+        const hasContactInfo = !!(goalResult?.extractedInfo?.email || goalResult?.extractedInfo?.phone);
+        
+        // Check all "require contact" categories
+        for (const category of normalized.requiresContact) {
+          if (messageLower.includes(category.toLowerCase())) {
+            console.log(`🔒 User asked about restricted topic: "${category}"`);
+            console.log(`📧 Has contact info: ${hasContactInfo}`);
+            
+            if (!hasContactInfo) {
+              console.log(`⚠️  INTERCEPTING: Collecting contact info before sharing "${category}"`);
+              
+              // Return contact collection response immediately
+              return { response: `I'd be happy to share information about ${category}! To send you the details, what's the best email to reach you at?` };
+            }
+          }
+        }
+        
+        // Check "never share" categories
+        for (const category of normalized.neverShare) {
+          if (messageLower.includes(category.toLowerCase())) {
+            console.log(`❌ User asked about "never share" topic: "${category}"`);
+            console.log(`⚠️  INTERCEPTING: Redirecting to direct contact`);
+            
+            const companyPhone = this.config.companyInfo?.phone || 'our team';
+            const companyWebsite = this.config.companyInfo?.website;
+            
+            let response = `For information about ${category}, I'd recommend speaking with our team directly.`;
+            if (companyPhone !== 'our team') {
+              response += ` You can reach us at ${companyPhone}`;
+            }
+            if (companyWebsite) {
+              response += ` or visit ${companyWebsite}`;
+            }
+            response += `. Is there anything else I can help you with?`;
+            
+            return { response };
+          }
+        }
+      }
+      
       // Check for intent matches before processing with LangChain
       const intentMatch = await this.intentService.detectIntent(
         context.text,
         currentPersona,
         this.config.companyInfo || {
-          name: 'Planet Fitness',
+          name: 'Planet Fitness9',
           industry: 'Fitness & Wellness',
           description: 'America\'s most popular gym with over 2,400 locations',
           products: 'Gym memberships, fitness equipment, group classes',
@@ -380,7 +753,7 @@ export class AgentService {
             response += '\n\n' + intentMatch.followUp.join(' ');
           }
           
-          return response;
+          return { response };
         }
       }
 
@@ -444,159 +817,509 @@ export class AgentService {
         console.log(`   Last message: ${content.substring(0, 50)}...`);
       }
 
-      // Create memory with messages
-      const memory = new BufferMemory({
-        returnMessages: true,
-        memoryKey: 'history',
-      });
+      // ═══════════════════════════════════════════════════════════════════
+      // 🎯 THREE-REQUEST ARCHITECTURE (delegated to MessageProcessor)
+      // ═══════════════════════════════════════════════════════════════════
+      // The MessageProcessor handles:
+      // - REQUEST #1: Intent Detection & Context Analysis
+      // - REQUEST #2: Conversational Response Generation  
+      // - REQUEST #3: Follow-Up Generation (Verification or Goal Question)
       
-      // Add existing messages to memory (excluding the current message we just added)
-      // Note: This adds to in-memory chat history for the LangChain conversation, NOT DynamoDB
-      const historyMessages = messages.slice(0, -1); // Remove the current message we just added
-      for (const msg of historyMessages) {
-        await memory.chatHistory.addMessage(msg);
-      }
-
-      // Create prompt template with current persona
-      const prompt = this.createPromptTemplate(context, currentPersona);
-
-      // Create conversation chain
-      const chain = new ConversationChain({
-        llm: this.model,
-        memory,
-        prompt,
-        verbose: false,
+      const processor = new MessageProcessor({
+        model: this.model,
+        persona: currentPersona,
+        companyInfo: this.config.companyInfo,
+        actionTagProcessor: this.actionTagProcessor,
+        eventBridgeService: this.config.eventBridgeService
       });
 
-      // Let LangChain handle the conversation naturally - no hardcoded logic
+      // Define callback for MessageProcessor to persist data and update goal state
+      const onDataExtracted = async (extractedData: Record<string, any>, goalResult: GoalOrchestrationResult | null, userMessage?: string) => {
+        if (!goalResult) return;
 
-      // Generate response
-      let response = await chain.predict({
-        input: context.text,
-      });
-
-      // Log response length for monitoring
-      const sentences = response.match(/[^.!?]+[.!?]+/g) || [response];
-      console.log(`📊 Claude generated: ${sentences.length} sentences (verbosity: ${verbosity}, maxTokens: ${maxTokens})`);
-
-      // 👉 SECOND LLM CALL: Generate follow-up question if needed
-      if (shouldAddQuestion) {
-        console.log(`❓ Generating follow-up question via second LLM call...`);
-        
-        try {
-          // Create a tiny model for question generation only
-          const questionModel = new ChatBedrockConverse({
-            model: this.config.bedrockModelId,
-            region: this.config.awsRegion,
-            temperature: 0.7, // More creative for questions
-            maxTokens: 20, // TINY - just enough for a question
-          } as any);
+        // 🔄 HANDLE ERROR RECOVERY: User says contact info was wrong
+        if (extractedData.wrong_phone || extractedData.wrong_email) {
+          const errorField = extractedData.wrong_phone ? 'wrong_phone' : 'wrong_email';
+          const actualField = errorField === 'wrong_phone' ? 'phone' : 'email';
           
-          // Build prompt: Generate ONLY a question, not a response
-          const questionPrompt = `Task: Generate ONLY a short follow-up question. Do not respond, explain, or add anything else. Just output the question.
-
-You are ${currentPersona.name}. You just said: "${response.trim()}"
-
-Generate ONE short follow-up question in the same language to keep the conversation flowing. Output ONLY the question text, nothing else:`;
-          
-          const questionResponse = await questionModel.invoke([
-            new HumanMessage(questionPrompt)
-          ]);
-          
-          // Extract question text from response
-          let question = '';
-          if (typeof questionResponse.content === 'string') {
-            question = questionResponse.content.trim();
-          } else if (Array.isArray(questionResponse.content)) {
-            question = questionResponse.content.map(c => {
-              if (typeof c === 'string') return c;
-              if (c && typeof c === 'object' && 'text' in c) return (c as any).text || '';
-              return '';
-            }).join('').trim();
+          // Get the wrong value from CURRENT workflow state (not from LLM extraction)
+          let wrongValue: string | null = null;
+          if (this.channelStateService && context.conversation_id) {
+            const currentState = await this.channelStateService.loadWorkflowState(context.conversation_id, context.tenantId);
+            wrongValue = currentState.capturedData[actualField] || null;
           }
           
-          // Clean up - remove quotes if present
-          question = question.replace(/^["']|["']$/g, '').trim();
-          
-          console.log(`❓ Generated question: ${question}`);
-          
-          // Append question to main response
-          if (question) {
-            response = `${response} ${question}`;
+          // If we don't have a value on file, we can't recover - skip this
+          if (!wrongValue) {
+            console.log(`⚠️ User says ${actualField} was wrong, but we don't have one on file. Skipping error recovery.`);
+            return;
           }
-        } catch (error) {
-          console.error('❌ Failed to generate question:', error);
-          // Continue without question - don't block the response
-        }
-      }
-
-      // Process action tags in the response
-      response = this.actionTagProcessor.processActionTags(response);
-
-      // Enhance response with goal-driven follow-ups
-      if (goalResult && goalResult.recommendations.length > 0) {
-        const urgentGoal = goalResult.recommendations.find(r => r.shouldPursue && r.priority >= 4);
-        if (urgentGoal) {
-          console.log(`🎯 Adding goal-driven follow-up: ${urgentGoal.goalId}`);
           
-          // Detect if user is being vague/disengaged
-          const isVague = /^(sounds good|great|ok|okay|sure|yes|yeah|cool|nice)\.?$/i.test(context.text.trim());
+          console.log(`🔄 ERROR RECOVERY: User says ${actualField} was wrong (${wrongValue})`);
           
-          if (isVague) {
-            // Re-engage with a more direct approach
-            response = `${response}\n\n${urgentGoal.message}`;
-          } else {
-            // Add natural follow-up
-            response = `${response} ${urgentGoal.message}`;
-          }
-        }
-      }
-
-      // Skip saving AI response to DynamoDB - messaging service handles persistence via EventBridge
-      // if (!existingHistory && this.config.dynamoService) {
-      //   const sessionKey = `${context.tenantId}:${context.email_lc}:${context.conversation_id || 'default-session'}`;
-      //   const chatHistoryForSaving = new KxDynamoChatHistory({
-      //     tenantId: context.tenantId,
-      //     emailLc: context.email_lc,
-      //     dynamoService: this.config.dynamoService,
-      //     historyLimit: this.config.historyLimit,
-      //     conversationId: context.conversation_id,
-      //   });
-      //   
-      //   const aiMessage = new AIMessage({
-      //     content: response,
-      //     additional_kwargs: {
-      //       source: 'agent',
-      //       model: this.config.bedrockModelId,
-      //     },
-      //   });
-      //   await chatHistoryForSaving.addMessage(aiMessage);
-      // }
-      // For CLI mode, the calling code will handle adding the response to history
-
-      // Emit trace event
-      // Emit trace event for successful processing (only if eventBridgeService is available)
-      if (this.config.eventBridgeService) {
-        const duration = Date.now() - startTime;
-        await this.config.eventBridgeService.publishAgentTrace(
-          EventBridgeService.createAgentTraceEvent(
-            context.tenantId,
-            'agent.message.processed',
-            {
-              contactPk: DynamoDBService.createContactPK(context.tenantId, context.email_lc),
-              durationMs: duration,
-              metadata: {
-                source: context.source,
-                model: this.config.bedrockModelId,
-                message_length: context.text.length,
-                response_length: response.length,
-              },
+          // Clear the bad data from workflow state
+          if (this.channelStateService && context.conversation_id) {
+            try {
+              await this.channelStateService.clearFieldData(
+                context.conversation_id,
+                actualField,
+                context.tenantId
+              );
+              console.log(`🗑️ Cleared bad ${actualField} from workflow state`);
+              
+              // Find and reactivate the contact info goal
+              const contactGoal = effectiveGoalConfig?.goals.find(g => 
+                g.type === 'data_collection' && 
+                g.dataToCapture?.fields.includes(actualField)
+              );
+              
+              if (contactGoal) {
+                // Remove from completed goals, add back to active goals
+                goalResult.completedGoals = goalResult.completedGoals.filter(id => id !== contactGoal.id);
+                if (!goalResult.activeGoals.includes(contactGoal.id)) {
+                  goalResult.activeGoals.push(contactGoal.id);
+                }
+                
+                // Mark goal as not complete in DynamoDB
+                await this.channelStateService.markGoalIncomplete(
+                  context.conversation_id,
+                  contactGoal.id,
+                  context.tenantId
+                );
+                
+                console.log(`✅ Reactivated goal: ${contactGoal.id} (${contactGoal.name})`);
+              }
+              
+              // Store the wrong value for acknowledgment
+              goalResult.extractedInfo[`previous_${actualField}`] = wrongValue;
+              
+            } catch (error) {
+              console.error(`❌ Error during ${actualField} recovery:`, error);
             }
-          )
-        );
+          }
+          
+          // Skip normal data extraction for this turn
+          return;
+        }
+
+        // Persist each extracted field (with validation)
+        for (const [fieldName, fieldData] of Object.entries(extractedData)) {
+          const value = typeof fieldData === 'object' && fieldData.value ? fieldData.value : fieldData;
+          
+          // 🔥 CRITICAL: Validate data before saving
+          let isValid = true;
+          if (fieldName === 'email') {
+            isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+            if (!isValid) {
+              console.log(`❌ Skipping invalid email: "${value}"`);
+              continue;
+            }
+          } else if (fieldName === 'phone') {
+            const digitsOnly = value.replace(/\D/g, '');
+            isValid = digitsOnly.length >= 7;
+            if (!isValid) {
+              console.log(`❌ Skipping invalid phone (only ${digitsOnly.length} digits): "${value}"`);
+              continue;
+            }
+          }
+          
+          console.log(`💾 LLM extracted data: ${fieldName} = "${value}"`);
+          
+          // Merge into goalResult
+          goalResult.extractedInfo[fieldName] = value;
+          
+          // PERSIST to DynamoDB
+          if (this.channelStateService && context.conversation_id) {
+            try {
+              await this.channelStateService.markFieldCaptured(
+                context.conversation_id,
+                fieldName,
+                value,
+                context.tenantId
+              );
+              console.log(`✅ Persisted ${fieldName} to DynamoDB`);
+              
+              // Auto-detect and persist gender when firstName is captured
+              if (fieldName === 'firstName' && !goalResult.extractedInfo['gender']) {
+                const detectedGender = this.detectGenderFromName(value);
+                if (detectedGender) {
+                  console.log(`🎭 Auto-detected gender from name "${value}": ${detectedGender}`);
+                  goalResult.extractedInfo['gender'] = detectedGender;
+                  await this.channelStateService.markFieldCaptured(
+                    context.conversation_id,
+                    'gender',
+                    detectedGender,
+                    context.tenantId
+                  );
+                  console.log(`✅ Persisted gender to DynamoDB`);
+                }
+              }
+            } catch (error) {
+              console.error(`❌ Failed to persist ${fieldName} to DynamoDB:`, error);
+            }
+          }
+        }
+        
+        // Re-check goal completion and update activeGoals
+        // 🚀 NEW: Check ALL goals (not just active ones) - user may satisfy multiple goals in one message!
+        if (this.channelStateService && context.conversation_id && effectiveGoalConfig) {
+          try {
+            let updatedState = await this.channelStateService.loadWorkflowState(context.conversation_id, context.tenantId);
+            
+            console.log(`\n${'🎯'.repeat(20)}`);
+            console.log(`🎯 MULTI-GOAL COMPLETION CHECK`);
+            console.log(`🎯 Checking ALL ${effectiveGoalConfig.goals.length} goals against captured data...`);
+            console.log(`${'🎯'.repeat(20)}\n`);
+            
+            // Sort goals by order for proper sequential completion
+            const sortedGoals = [...effectiveGoalConfig.goals].sort((a, b) => (a.order || 999) - (b.order || 999));
+            const completedGoalsThisTurn: string[] = [];
+            
+            // Check EVERY goal (not just active ones) to see if it can be completed
+            for (const goalDef of sortedGoals) {
+              // Skip if already completed
+              if (updatedState.completedGoals.includes(goalDef.id)) {
+                console.log(`  ⏭️ ${goalDef.name}: Already completed`);
+                continue;
+              }
+              
+              // Only check data_collection and scheduling goals
+              if (goalDef.type !== 'data_collection' && goalDef.type !== 'scheduling') {
+                continue;
+              }
+              
+              // Check if all required fields are captured
+              const requiredFields = this.getRequiredFieldNames(goalDef);
+              
+              // Helper to check if a field has a valid (non-null, non-empty) value
+              const hasValidValue = (field: string): boolean => {
+                const value = updatedState.capturedData[field];
+                if (!value) return false;
+                // Handle objects with { value: null } structure (from LLM extraction)
+                if (typeof value === 'object' && 'value' in value) {
+                  return value.value !== null && value.value !== undefined && value.value !== '';
+                }
+                // Handle direct values
+                if (value === null || value === undefined || value === '') return false;
+                
+                // 🕐 SCHEDULING VALIDATION: For scheduling goals, require SPECIFIC date/time
+                if (goalDef.type === 'scheduling') {
+                  // preferredTime must be a SPECIFIC time (e.g., "6pm", "7:30", "18:00")
+                  // NOT vague preferences like "evening", "morning", "later than 6", "after 5"
+                  if (field === 'preferredTime') {
+                    const timeStr = String(value).trim().toLowerCase();
+                    
+                    // Check if it's a SPECIFIC time (has a number followed by am/pm, or HH:MM format)
+                    const isSpecificTime = /^\d{1,2}\s*(am|pm|:\d{2})$/i.test(timeStr) || // "6pm", "7:30", "18:00"
+                                          /^\d{1,2}:\d{2}\s*(am|pm)?$/i.test(timeStr);   // "7:30pm", "18:00"
+                    
+                    // Check if it's a vague/relative constraint (should NOT complete the goal)
+                    const isVagueTime = /^(morning|afternoon|evening|night|daytime|soon|sometime)$/i.test(timeStr) ||
+                                       /\b(later|after|before|around|about)\b.*\d/i.test(timeStr) || // "later than 6", "after 5"
+                                       /\b(later|earlier)\b/i.test(timeStr); // just "later" or "earlier"
+                    
+                    if (!isSpecificTime || isVagueTime) {
+                      console.log(`  ⚠️ preferredTime "${value}" is not a specific time - need exact time like "7pm" or "7:30"`);
+                      return false;
+                    }
+                  }
+                  
+                  // preferredDate must be resolvable to an actual date
+                  if (field === 'preferredDate') {
+                    const vagueValue = String(value).trim().toLowerCase();
+                    // These are acceptable relative dates that can be resolved
+                    const acceptableRelative = ['today', 'tomorrow', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+                    const isRelativeDay = acceptableRelative.some(day => vagueValue.includes(day));
+                    const hasDatePattern = /\d{1,2}[\/\-]\d{1,2}|\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(vagueValue);
+                    
+                    if (!isRelativeDay && !hasDatePattern) {
+                      console.log(`  ⚠️ preferredDate "${value}" cannot be resolved to a specific date`);
+                      return false;
+                    }
+                  }
+                  
+                  // normalizedDateTime must be a valid ISO datetime
+                  if (field === 'normalizedDateTime') {
+                    const isoPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+                    if (!isoPattern.test(String(value))) {
+                      console.log(`  ⚠️ normalizedDateTime "${value}" is not a valid ISO datetime`);
+                      return false;
+                    }
+                  }
+                }
+                
+                return true;
+              };
+              
+              const capturedFields = requiredFields.filter((field: string) => hasValidValue(field));
+              const missingFields = requiredFields.filter((field: string) => !hasValidValue(field));
+              const allFieldsCaptured = missingFields.length === 0;
+              
+              console.log(`  📋 ${goalDef.name} (order ${goalDef.order}):`);
+              console.log(`     Required: ${requiredFields.join(', ') || 'none'}`);
+              console.log(`     Captured: ${capturedFields.join(', ') || 'none'}`);
+              console.log(`     Missing:  ${missingFields.join(', ') || 'none'}`);
+              
+              if (allFieldsCaptured) {
+                console.log(`  ✅ ${goalDef.name}: All data captured! Marking complete.`);
+                
+                await this.channelStateService.markGoalCompleted(
+                  context.conversation_id,
+                  goalDef.id,
+                  context.tenantId
+                );
+                
+                // Execute goal actions
+                if (goalDef.actions?.onComplete) {
+                  await (this.goalOrchestrator as any).executeGoalActions(goalDef, {
+                    tenantId: context.tenantId,
+                    channelId: context.conversation_id,
+                    userId: context.email_lc,
+                    sessionId: context.conversation_id || 'default',
+                    collectedData: updatedState.capturedData
+                  });
+                }
+                
+                completedGoalsThisTurn.push(goalDef.id);
+                
+                // Update local state to reflect completion (for subsequent checks)
+                updatedState.completedGoals.push(goalDef.id);
+              } else {
+                console.log(`  ❌ ${goalDef.name}: Still missing ${missingFields.length} field(s)`);
+              }
+            }
+            
+            console.log(`\n📊 Summary: Completed ${completedGoalsThisTurn.length} goal(s) this turn`);
+            if (completedGoalsThisTurn.length > 0) {
+              console.log(`   Newly completed: ${completedGoalsThisTurn.join(', ')}`);
+            }
+            
+            // Remove completed goals from activeGoals
+            goalResult.activeGoals = goalResult.activeGoals.filter((id: string) => !updatedState.completedGoals.includes(id));
+            
+            // ═══════════════════════════════════════════════════════════════════
+            // 🚀 FAST-TRACK DETECTION (in processMessageChunked callback)
+            // ═══════════════════════════════════════════════════════════════════
+            const primaryGoal = effectiveGoalConfig.goals.find(g => g.isPrimary);
+            let fastTrackActivated = false;
+            
+            if (primaryGoal && !updatedState.completedGoals.includes(primaryGoal.id)) {
+              let shouldFastTrack = false;
+              let fastTrackReason = '';
+              
+              // Check 1: Did user provide data for the primary goal's fields?
+              const primaryGoalFields = this.getFieldNamesForGoal(primaryGoal);
+              const extractedFieldsForPrimary = Object.keys(extractedData)
+                .filter(field => primaryGoalFields.includes(field));
+              
+              if (extractedFieldsForPrimary.length > 0) {
+                shouldFastTrack = true;
+                fastTrackReason = `User provided data for primary goal fields: ${extractedFieldsForPrimary.join(', ')}`;
+              }
+              
+              // Check 2: Is the primary goal a scheduling goal AND user's intent is scheduling?
+              if (!shouldFastTrack && primaryGoal.type === 'scheduling' && userMessage) {
+                const schedulingKeywords = [
+                  'schedule', 'book', 'appointment', 'come in', 'visit', 'class', 
+                  'session', 'sign up', 'register', 'available', 'open', 'times', 
+                  'when can', 'free class', 'first class', 'trial'
+                ];
+                const messageLower = userMessage.toLowerCase();
+                const hasSchedulingIntent = schedulingKeywords.some(keyword => messageLower.includes(keyword));
+                
+                if (hasSchedulingIntent) {
+                  shouldFastTrack = true;
+                  fastTrackReason = `User expressed scheduling intent in message`;
+                }
+              }
+              
+              if (shouldFastTrack) {
+                console.log(`\n${'🚀'.repeat(20)}`);
+                console.log(`🚀 FAST-TRACK DETECTED!`);
+                console.log(`🚀 Reason: ${fastTrackReason}`);
+                console.log(`🚀 Primary goal: ${primaryGoal.name}`);
+                console.log(`${'🚀'.repeat(20)}\n`);
+                
+                // Get prerequisites from triggers.prerequisiteGoals
+                const prerequisiteIds = (primaryGoal as any).prerequisites 
+                  || primaryGoal.triggers?.prerequisiteGoals 
+                  || [];
+                console.log(`🚀 Prerequisites required: ${prerequisiteIds.length > 0 ? prerequisiteIds.join(', ') : 'none'}`);
+                
+                // 🔥 SORT prerequisites by their workflow ORDER (not by array position)
+                const prerequisiteGoals = prerequisiteIds
+                  .map((id: string) => effectiveGoalConfig.goals.find(g => g.id === id))
+                  .filter((g: any) => g !== undefined);
+                
+                const sortedPrerequisites = prerequisiteGoals
+                  .sort((a: any, b: any) => (a.order || 999) - (b.order || 999))
+                  .map((g: any) => g.id);
+                
+                console.log(`🚀 Prerequisites sorted by workflow order: ${sortedPrerequisites.join(' → ')}`);
+                
+                // Determine which goals to activate (sorted prerequisites + primary)
+                const fastTrackGoalIds = [...sortedPrerequisites, primaryGoal.id];
+                
+                // 🔥 PERSIST fast-track goal sequence for future messages
+                await this.channelStateService!.updateWorkflowState(
+                  context.conversation_id,
+                  { fastTrackGoals: fastTrackGoalIds },
+                  context.tenantId
+                );
+                console.log(`🚀 Persisted fast-track sequence: ${fastTrackGoalIds.join(' → ')}`);
+                
+                // Filter out already completed goals
+                const goalsToActivate = fastTrackGoalIds.filter(id => !updatedState.completedGoals.includes(id));
+                
+                // Find the first incomplete goal in the fast-track sequence
+                const nextFastTrackGoal = goalsToActivate[0];
+                
+                if (nextFastTrackGoal) {
+                  console.log(`🚀 Fast-tracking: Activating ${nextFastTrackGoal}`);
+                  goalResult.activeGoals = [nextFastTrackGoal];
+                  fastTrackActivated = true;
+                  
+                  // Persist the fast-track goal activation
+                  await this.channelStateService!.setActiveGoals(
+                    context.conversation_id,
+                    [nextFastTrackGoal],
+                    context.tenantId
+                  );
+                }
+              }
+            }
+            
+            // 🚀 CHECK FOR EXISTING FAST-TRACK MODE (from previous messages)
+            if (!fastTrackActivated && updatedState.fastTrackGoals?.length) {
+              console.log(`🚀 Continuing fast-track mode: ${updatedState.fastTrackGoals.join(' → ')}`);
+              
+              // Find the first incomplete goal in the fast-track sequence
+              const goalsToActivate = updatedState.fastTrackGoals.filter(id => !updatedState.completedGoals.includes(id));
+              const nextFastTrackGoal = goalsToActivate[0];
+              
+              if (nextFastTrackGoal) {
+                console.log(`🚀 Next fast-track goal: ${nextFastTrackGoal}`);
+                goalResult.activeGoals = [nextFastTrackGoal];
+                fastTrackActivated = true;
+                
+                // Persist the fast-track goal activation
+                await this.channelStateService!.setActiveGoals(
+                  context.conversation_id,
+                  [nextFastTrackGoal],
+                  context.tenantId
+                );
+              } else {
+                // All fast-track goals complete - clear fast-track mode and continue with remaining goals
+                console.log(`🎉 All fast-track goals complete! Clearing fast-track mode and continuing with remaining goals.`);
+                await this.channelStateService!.updateWorkflowState(
+                  context.conversation_id,
+                  { fastTrackGoals: [] },
+                  context.tenantId
+                );
+                // 🔥 IMPORTANT: Set fastTrackActivated to false so we continue with remaining goals!
+                fastTrackActivated = false;
+              }
+            }
+            
+            // 🚀 ACTIVATE NEXT INCOMPLETE GOAL (by order) - runs after fast-track completes OR if not fast-tracked
+            if (!fastTrackActivated) {
+              // Find the first goal that is NOT complete
+              const nextIncompleteGoal = sortedGoals.find(g => 
+                !updatedState.completedGoals.includes(g.id) &&
+                (g.type === 'data_collection' || g.type === 'scheduling')
+              );
+              
+              if (nextIncompleteGoal) {
+                console.log(`\n🎯 Next goal to pursue: ${nextIncompleteGoal.name} (order ${nextIncompleteGoal.order})`);
+                
+                // Set as active if not already
+                if (!goalResult.activeGoals.includes(nextIncompleteGoal.id)) {
+                  goalResult.activeGoals = [nextIncompleteGoal.id];
+                  
+                  // Persist to DynamoDB
+                  await this.channelStateService!.setActiveGoals(
+                    context.conversation_id,
+                    [nextIncompleteGoal.id],
+                    context.tenantId
+                  );
+                }
+              } else {
+                console.log(`\n🎉 ALL GOALS COMPLETE! No more goals to pursue.`);
+                goalResult.activeGoals = [];
+              }
+            }
+            
+            console.log(`✅ Final activeGoals: ${goalResult.activeGoals.join(', ') || 'none'}`);
+          } catch (error) {
+            console.error('❌ Error in multi-goal completion check:', error);
+          }
+        }
+      };
+
+      const processingResult = await processor.process({
+        userMessage: context.text,
+        messages,
+        goalResult,
+        effectiveGoalConfig,
+        channelState, // Pass channel state so goal questions know what's already captured
+        onDataExtracted,
+        // Tracking context for LLM usage events
+        tenantId: context.tenantId,
+        channelId: context.conversation_id,
+        messageSource: context.source || 'unknown'
+      });
+
+      const response = processingResult.response;
+      
+      // Store follow-up question in context for handler to access
+      if (processingResult.followUpQuestion) {
+        (context as any)._followUpQuestion = processingResult.followUpQuestion;
+        console.log(`✅ Follow-up question stored: "${processingResult.followUpQuestion}"`);
+      }
+      
+      // 📊 UPDATE CONVERSATION AGGREGATES (non-blocking)
+      // Track engagement, conversion likelihood, and language profile over time
+      if (this.channelStateService && context.conversation_id && processingResult.intentDetectionResult) {
+        try {
+          const intentResult = processingResult.intentDetectionResult;
+          
+          // Use LLM values if available, otherwise calculate defaults based on intent
+          const interestLevel = intentResult.interestLevel ?? this.inferInterestLevel(intentResult);
+          const conversionLikelihood = intentResult.conversionLikelihood ?? this.inferConversionLikelihood(intentResult);
+          const languageProfile = intentResult.languageProfile ?? {
+            formality: 3,
+            hypeTolerance: 3,
+            emojiUsage: 0,
+            language: 'en'
+          };
+          
+          await this.channelStateService.updateConversationAggregates(
+            context.conversation_id,
+            {
+              messageText: context.text, // Store the user's message for matching
+              interestLevel,
+              conversionLikelihood,
+              emotionalTone: intentResult.detectedEmotionalTone || 'neutral',
+              languageProfile,
+              primaryIntent: intentResult.primaryIntent
+            },
+            context.tenantId
+          );
+        } catch (error) {
+          // Non-blocking - log but don't fail the response
+          console.warn(`⚠️ Failed to update conversation aggregates:`, error);
+        }
       }
 
-      return response;
+      console.log('🎯 Message processing complete');
+      console.log('🎯'.repeat(32) + '\n');
+
+      // Return the response and follow-up question (if any)
+      const followUpQuestion = (context as any)._followUpQuestion;
+      return {
+        response,
+        followUpQuestion
+      };
     } catch (error) {
       // Emit error event (only if eventBridgeService is available)
       if (this.config.eventBridgeService) {
@@ -624,8 +1347,75 @@ Generate ONE short follow-up question in the same language to keep the conversat
    * Process an agent context and generate chunked responses
    */
   async processMessageChunked(context: AgentContext): Promise<ResponseChunk[]> {
-    // First get the full response
-    const fullResponse = await this.processMessage(context);
+    // Initialize message tracking service on first use (lazy loading)
+    // Uses the same channels table with a special createdAt key
+    if (!this.messageTrackingService && this.config.dynamoService && this.channelStateService) {
+      const dynamoClient = new DynamoDBClient({ region: this.config.awsRegion });
+      const docClient = DynamoDBDocumentClient.from(dynamoClient, {
+        marshallOptions: {
+          removeUndefinedValues: true,
+        },
+      });
+      const channelsTable = process.env.CHANNELS_TABLE || 'KxGen-channels-v2';
+      const { MessageTrackingService } = await import('./message-tracking-service.js');
+      this.messageTrackingService = new MessageTrackingService(docClient, channelsTable);
+      console.log(`📍 Message tracking service initialized (reusing channels table: ${channelsTable})`);
+    }
+    
+    // STEP 1: Check for previous response and handle rollback if interrupted
+    let responseToMessageId: string | undefined;
+    
+    if (this.messageTrackingService && context.channelId && this.channelStateService) {
+      try {
+        // Check if there's a previous response still being processed
+        const previousMessageId = await this.messageTrackingService.getCurrentMessageId(
+          context.tenantId,
+          context.channelId
+        );
+        
+        if (previousMessageId) {
+          console.log(`⚠️ Previous response ${previousMessageId} was interrupted by new message`);
+          
+          // Get state snapshot for rollback
+          const snapshot = await this.messageTrackingService.getStateSnapshot(
+            context.tenantId,
+            context.channelId
+          );
+          
+          if (snapshot) {
+            console.log(`⏪ Rolling back state from interrupted response`);
+            await this.channelStateService.rollbackState(context.channelId, snapshot, context.tenantId);
+          }
+        }
+        
+        // STEP 2: Create state snapshot BEFORE processing response
+        const currentState = await this.channelStateService.loadWorkflowState(context.channelId, context.tenantId);
+        const stateSnapshot = {
+          attemptCounts: {}, // TODO: Get from GoalOrchestrator if needed
+          capturedData: { ...currentState.capturedData },
+          activeGoals: [...currentState.activeGoals],
+          completedGoals: [...currentState.completedGoals],
+          messageCount: currentState.messageCount
+        };
+        
+        // STEP 3: Start tracking this new response
+        responseToMessageId = await this.messageTrackingService.startTracking(
+          context.tenantId,
+          context.channelId,
+          context.senderId || context.email_lc,
+          stateSnapshot
+        );
+        
+        console.log(`📍 Started tracking response: ${responseToMessageId}`);
+      } catch (error) {
+        console.error(`❌ Error setting up message tracking:`, error);
+        // Continue without tracking - degraded functionality but not fatal
+      }
+    }
+    
+    // STEP 4: Generate the full response
+    const result = await this.processMessage(context);
+    const fullResponse = result.response;
     
     // Load persona for chunking configuration
     let currentPersona = this.persona;
@@ -643,20 +1433,46 @@ Generate ONE short follow-up question in the same language to keep the conversat
       }
     }
 
-    // Chunk the response based on persona configuration and channel
-    return ResponseChunker.chunkResponse(
+    // STEP 5: Chunk the response and attach responseToMessageId
+    const chunks = ResponseChunker.chunkResponse(
       fullResponse,
       context.source,
-      currentPersona.responseChunking
+      currentPersona.responseChunking,
+      responseToMessageId
     );
+    
+    // STEP 6: If there's a follow-up question, add it as a separate delayed chunk
+    const followUpQuestion = (context as any)._followUpQuestion;
+    if (followUpQuestion) {
+      console.log(`💬 Adding follow-up question as separate message: "${followUpQuestion}"`);
+      
+      // Calculate total delay of all main chunks to know when to send the question
+      const totalMainDelay = chunks.reduce((sum, chunk) => sum + chunk.delayMs, 0);
+      
+      // Add extra delay (thinking time) before the question
+      const questionDelay = totalMainDelay + 2000; // 2 seconds after last main chunk
+      
+      // Create a follow-up question chunk
+      const questionChunk: ResponseChunk = {
+        text: followUpQuestion,
+        delayMs: questionDelay,
+        index: chunks.length,
+        total: chunks.length + 1,
+        responseToMessageId
+      };
+      
+      chunks.push(questionChunk);
+    }
+    
+    return chunks;
   }
 
   /**
    * Create prompt template based on tenant and context
    */
-  private createPromptTemplate(context: AgentContext, persona?: AgentPersona): PromptTemplate {
+  private createPromptTemplate(context: AgentContext, persona?: AgentPersona, goalResult?: any, preExtractedData?: Record<string, any>, intentDetectionResult?: IntentDetectionResult | null): PromptTemplate {
     // Use the provided persona or fall back to the instance persona
-    const systemPrompt = this.getSystemPrompt(context, persona || this.persona);
+    const systemPrompt = this.getSystemPrompt(context, persona || this.persona, goalResult, preExtractedData, intentDetectionResult);
     
     return PromptTemplate.fromTemplate(`${systemPrompt}
 
@@ -670,24 +1486,70 @@ Assistant:`);
   /**
    * Get system prompt based on persona and context
    */
-  private getSystemPrompt(context: AgentContext, persona: AgentPersona): string {
+  private getSystemPrompt(
+    context: AgentContext, 
+    persona: AgentPersona, 
+    goalResult?: any, 
+    preExtractedData?: Record<string, any>,
+    intentDetectionResult?: IntentDetectionResult | null
+  ): string {
     // CRITICAL: Build verbosity constraint FIRST - this must be the TOP priority
     const verbosity = (persona as any)?.personalityTraits?.verbosity || 5;
-    let verbosityRule = '';
-    if (verbosity <= 2) {
-      verbosityRule = '🚨 CRITICAL RESPONSE CONSTRAINT: EXTREMELY BRIEF - Maximum 1-2 sentences total. NO EXCEPTIONS. Get to the point immediately.\n\n';
-    } else if (verbosity <= 4) {
-      verbosityRule = '🚨 CRITICAL RESPONSE CONSTRAINT: CONCISE - Maximum 2-3 sentences total. Be direct and avoid rambling.\n\n';
-    } else if (verbosity <= 6) {
-      verbosityRule = '🚨 CRITICAL RESPONSE CONSTRAINT: BALANCED - Keep to 3-4 sentences maximum. Be thorough but not excessive.\n\n';
-    } else if (verbosity <= 8) {
-      verbosityRule = '📝 Response guideline: 4-6 sentences maximum. Provide explanations and context.\n\n';
-    } else {
-      verbosityRule = '📝 Response guideline: 6-10 sentences when needed. Be thorough and educational.\n\n';
+    const verbosityRule = VerbosityHelper.getSystemPromptRule(verbosity);
+    
+    // ❌ REMOVED: Goal rules from conversational prompt
+    // Goal-driven questions are now handled by a separate, focused LLM request
+    // This allows the conversational response to be natural and not conflicted
+    
+    // Build CRITICAL information sharing policy (THIRD highest priority)
+    let sharingPolicyRule = '';
+    if (this.config.companyInfo?.responseGuidelines) {
+      const { normalizeSharingPermissions, canShareInformation } = require('./sharing-permissions-utils');
+      const normalized = normalizeSharingPermissions(
+        this.config.companyInfo.responseGuidelines.informationCategories,
+        this.config.companyInfo.responseGuidelines.sharingPermissions
+      );
+      
+      // Build critical sharing rules
+      const neverShareItems = Array.from(normalized.neverShare);
+      const requireContactItems = Array.from(normalized.requiresContact);
+      
+      if (neverShareItems.length > 0 || requireContactItems.length > 0) {
+        sharingPolicyRule = `🚨 CRITICAL INFORMATION SHARING RULES - MUST FOLLOW:\n\n`;
+        
+        if (neverShareItems.length > 0) {
+          sharingPolicyRule += `❌ NEVER SHARE (redirect to direct contact): ${neverShareItems.join(', ')}\n`;
+        }
+        
+        if (requireContactItems.length > 0) {
+          sharingPolicyRule += `📧 REQUIRE CONTACT INFO BEFORE SHARING: ${requireContactItems.join(', ')}\n`;
+          sharingPolicyRule += `   → If user asks about these topics, you MUST collect their email/phone FIRST.\n`;
+          sharingPolicyRule += `   → Say: "I'd be happy to share that info! What's the best email to reach you at?"\n`;
+        }
+        
+        sharingPolicyRule += `\n`;
+      }
     }
     
-    // Start with verbosity rule, THEN add persona's system prompt
-    let systemPrompt = verbosityRule + persona.systemPrompt;
+    // ❌ REMOVED: Intent monitoring prompt
+    // Pre-extraction (lines 664-719) already handles data detection
+    // No need to tell the LLM to "monitor" - we already did that job
+    
+    // Build system prompt: sharing policy + persona + verbosity rules
+    let systemPrompt = sharingPolicyRule + persona.systemPrompt + verbosityRule;
+    
+    // ✅ ADD: Acknowledgment for pre-extracted data
+    if (preExtractedData && Object.keys(preExtractedData).length > 0) {
+      let dataAcknowledgment = `\n✅ USER JUST PROVIDED:\n`;
+      for (const [field, value] of Object.entries(preExtractedData)) {
+        dataAcknowledgment += `- ${field}: ${value}\n`;
+      }
+      dataAcknowledgment += `\nAcknowledge this enthusiastically and naturally in your response.\n\n`;
+      
+      // Prepend to system prompt (high priority)
+      systemPrompt = dataAcknowledgment + systemPrompt;
+      console.log(`✅ Added acknowledgment for detected data: ${Object.keys(preExtractedData).join(', ')}`);
+    }
     
     // Convert first-person to second-person if needed (allows users to write naturally)
     const { PronounConverter } = require('./pronoun-converter.js');
@@ -727,33 +1589,39 @@ CORE AGENT BEHAVIOR (ALWAYS FOLLOW):
     
     systemPrompt += coreRules;
     
-    // Enforce question behavior based on questionRatio
-    const questionRatio = (persona as any)?.personalityTraits?.questionRatio;
+    // Questions are now ONLY provided by goal-driven workflow
+    // No random question generation - all questions come from active goals
+    console.log(`🎯 Question strategy: GOAL-DRIVEN ONLY (no random questions)`);
     
-    // If ratio is high (9-10), ALWAYS require a question.
-    // Otherwise use probabilistic behavior.
-    if (questionRatio !== undefined) {
-      const probability = questionRatio / 10;
-      const isAlwaysAsk = questionRatio >= 9; // 9-10 = always ask
-      const shouldRequireQuestion = isAlwaysAsk || Math.random() < probability;
-      
-      if (shouldRequireQuestion) {
-        console.log(
-          `❓ Question enforced: ratio=${questionRatio}/10 (${Math.round(probability * 100)}%), alwaysAsk=${isAlwaysAsk}`
-        );
-        
-        systemPrompt += `
-
-IMPORTANT INSTRUCTION FOR THIS RESPONSE:
-You MUST end your response with a natural, contextual question that keeps the conversation engaging. 
-Make the question fit naturally with your personality and the conversation flow. 
-Match the language the user is speaking.`;
-      } else {
-        console.log(
-          `❓ Question optional this turn: ratio=${questionRatio}/10 (${Math.round(probability * 100)}%)`
+    // ═══════════════════════════════════════════════════════════════════
+    // 🏢 SELECTIVE COMPANY INFO INJECTION (based on intent detection)
+    // ═══════════════════════════════════════════════════════════════════
+    // Only inject company info fields that were specifically requested
+    // This keeps the prompt focused and reduces noise
+    
+    let companyInfoSection = '';
+    
+    if (intentDetectionResult?.companyInfoRequested && intentDetectionResult.companyInfoRequested.length > 0) {
+      console.log(`🏢 Injecting selective company info: ${intentDetectionResult.companyInfoRequested.join(', ')}`);
+      companyInfoSection = this.buildSelectiveCompanyInfo(
+        this.config.companyInfo,
+        intentDetectionResult.companyInfoRequested
+      );
+    } else {
+      // Default: Always include hours and contact for context (but condensed)
+      if (this.config.companyInfo) {
+        companyInfoSection = this.buildSelectiveCompanyInfo(
+          this.config.companyInfo,
+          ['hours', 'contact', 'location']
         );
       }
     }
+    
+    systemPrompt += companyInfoSection;
+    
+    // Replace template variables with actual values
+    const companyName = this.config.companyInfo?.name || 'the company';
+    systemPrompt = systemPrompt.replace(/\{\{companyName\}\}/g, companyName);
     
     return systemPrompt;
   }
@@ -765,7 +1633,8 @@ Match the language the user is speaking.`;
     const startTime = Date.now();
     
     try {
-      const response = await this.processMessage(context);
+      const result = await this.processMessage(context);
+      const response = result.response;
       const processingTime = Date.now() - startTime;
       
       // Check if we detected an intent during processing
@@ -787,7 +1656,7 @@ Match the language the user is speaking.`;
         context.text,
         currentPersona,
         this.config.companyInfo || {
-          name: 'Planet Fitness',
+          name: 'Planet Fitness9',
           industry: 'Fitness & Wellness',
           description: 'America\'s most popular gym with over 2,400 locations',
           products: 'Gym memberships, fitness equipment, group classes',
@@ -858,6 +1727,71 @@ Match the language the user is speaking.`;
   }
 
   /**
+   * Helper: Get required field names from goal (supports both old and new formats)
+   */
+  private getRequiredFieldNames(goal: any): string[] {
+    if (!goal.dataToCapture?.fields) return [];
+    
+    const fields = goal.dataToCapture.fields;
+    
+    // NEW FORMAT: Array of field objects
+    if (fields.length > 0 && typeof fields[0] === 'object' && 'name' in fields[0]) {
+      return fields
+        .filter((f: any) => f.required)
+        .map((f: any) => f.name);
+    }
+    
+    // OLD FORMAT: Use validationRules
+    const rules = goal.dataToCapture.validationRules || {};
+    return fields.filter((fieldName: string) => {
+      const fieldRules = rules[fieldName];
+      return fieldRules?.required !== false; // Default to required
+    });
+  }
+
+  /**
+   * Helper: Get ALL field names from goal (not just required)
+   */
+  private getFieldNamesForGoal(goal: any): string[] {
+    if (!goal.dataToCapture?.fields) return [];
+    
+    const fields = goal.dataToCapture.fields;
+    
+    // NEW FORMAT: Array of field objects
+    if (fields.length > 0 && typeof fields[0] === 'object' && 'name' in fields[0]) {
+      return fields.map((f: any) => f.name);
+    }
+    
+    // OLD FORMAT: String array
+    return fields;
+  }
+
+  /**
+   * Detect gender from first name
+   */
+  private detectGenderFromName(firstName: string): 'female' | 'male' | null {
+    if (!firstName) return null;
+    
+    const nameLower = firstName.toLowerCase();
+    
+    // Common female name patterns
+    const femaleNames = ['sara', 'sarah', 'maria', 'jessica', 'jennifer', 'amy', 'emily', 'ashley', 'michelle', 'lisa', 'karen', 'susan', 'donna', 'carol', 'ruth', 'sharon', 'laura', 'angela', 'stephanie', 'rebecca', 'deborah', 'rachel', 'catherine', 'anna', 'emma', 'olivia', 'sophia', 'isabella', 'mia', 'charlotte', 'amelia', 'harper', 'evelyn', 'abigail', 'ella', 'scarlett', 'grace', 'lily', 'chloe', 'victoria', 'madison', 'lucy', 'hannah', 'zoe', 'stella', 'hazel', 'violet', 'aurora', 'savannah', 'audrey', 'brooklyn', 'bella', 'claire', 'skylar', 'lucy', 'paisley', 'everly', 'anna', 'caroline', 'nova', 'genesis', 'emilia', 'kennedy'];
+    
+    // Common male name patterns
+    const maleNames = ['david', 'michael', 'john', 'james', 'robert', 'william', 'richard', 'joseph', 'thomas', 'charles', 'christopher', 'daniel', 'matthew', 'anthony', 'mark', 'donald', 'steven', 'paul', 'andrew', 'joshua', 'kenneth', 'kevin', 'brian', 'george', 'edward', 'ronald', 'timothy', 'jason', 'jeffrey', 'ryan', 'jacob', 'gary', 'nicholas', 'eric', 'jonathan', 'stephen', 'larry', 'justin', 'scott', 'brandon', 'benjamin', 'samuel', 'raymond', 'gregory', 'frank', 'alexander', 'patrick', 'jack', 'dennis', 'jerry', 'tyler', 'aaron', 'jose', 'adam', 'henry', 'nathan', 'douglas', 'zachary', 'peter', 'kyle', 'walter', 'ethan', 'jeremy', 'harold', 'keith', 'christian', 'roger', 'noah', 'gerald', 'carl', 'terry', 'sean', 'austin', 'arthur', 'lawrence', 'jesse', 'dylan', 'bryan', 'joe', 'jordan', 'billy', 'bruce', 'albert', 'willie', 'gabriel', 'logan', 'alan', 'juan', 'wayne', 'roy', 'ralph', 'randy', 'eugene', 'vincent', 'russell', 'elijah', 'louis', 'bobby', 'philip', 'johnny'];
+    
+    if (femaleNames.includes(nameLower)) {
+      return 'female';
+    } else if (maleNames.includes(nameLower)) {
+      return 'male';
+    } else if (nameLower.endsWith('a') || nameLower.endsWith('elle') || nameLower.endsWith('ette')) {
+      return 'female'; // Common female name endings
+    }
+    
+    return null;
+  }
+
+  /**
    * Determine preferred channel for response based on context and tenant preferences
    */
   determinePreferredChannel(context: AgentContext, tenantPreferences?: Record<string, any>): MessageSource {
@@ -888,5 +1822,69 @@ Match the language the user is speaking.`;
     }
     
     return routing;
+  }
+
+  /**
+   * Infer interest level from intent when LLM doesn't provide it
+   */
+  private inferInterestLevel(intentResult: any): number {
+    // Base interest by intent type
+    const intentInterest: Record<string, number> = {
+      'scheduling': 4,           // High - they want to book
+      'workflow_data_capture': 4, // High - providing info
+      'company_info_request': 3,  // Medium - curious
+      'general_conversation': 3,  // Medium - engaged
+      'objection': 2,            // Low - resistance
+      'end_conversation': 2,     // Low - leaving
+      'unknown': 3               // Default
+    };
+    
+    let interest = intentInterest[intentResult.primaryIntent] || 3;
+    
+    // Adjust based on emotional tone
+    const tone = intentResult.detectedEmotionalTone;
+    if (tone === 'positive') interest = Math.min(5, interest + 1);
+    if (tone === 'frustrated' || tone === 'negative') interest = Math.max(1, interest - 1);
+    
+    // Boost if they provided data
+    if (intentResult.extractedData && Array.isArray(intentResult.extractedData) && intentResult.extractedData.length > 0) {
+      interest = Math.min(5, interest + 0.5);
+    }
+    
+    return Math.round(interest * 10) / 10; // 1 decimal place
+  }
+
+  /**
+   * Infer conversion likelihood from intent when LLM doesn't provide it
+   */
+  private inferConversionLikelihood(intentResult: any): number {
+    // Base likelihood by intent type
+    const intentLikelihood: Record<string, number> = {
+      'scheduling': 0.8,          // High - they want to book
+      'workflow_data_capture': 0.7, // Good - providing info
+      'company_info_request': 0.5,  // Medium - researching
+      'general_conversation': 0.4,  // Lower - just chatting
+      'objection': 0.3,            // Low - resistance
+      'end_conversation': 0.2,     // Low - leaving
+      'unknown': 0.4               // Default
+    };
+    
+    let likelihood = intentLikelihood[intentResult.primaryIntent] || 0.4;
+    
+    // Adjust based on emotional tone
+    const tone = intentResult.detectedEmotionalTone;
+    if (tone === 'positive') likelihood = Math.min(1, likelihood + 0.1);
+    if (tone === 'urgent') likelihood = Math.min(1, likelihood + 0.15);
+    if (tone === 'frustrated' || tone === 'negative') likelihood = Math.max(0, likelihood - 0.1);
+    
+    // Boost if they provided contact info
+    if (intentResult.extractedData && Array.isArray(intentResult.extractedData)) {
+      const hasContact = intentResult.extractedData.some((d: any) => 
+        d.field === 'email' || d.field === 'phone'
+      );
+      if (hasContact) likelihood = Math.min(1, likelihood + 0.2);
+    }
+    
+    return Math.round(likelihood * 100) / 100; // 2 decimal places
   }
 }

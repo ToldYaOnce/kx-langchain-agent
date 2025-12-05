@@ -6,6 +6,7 @@ export interface ResponseChunk {
   index: number;
   total: number;
   delayMs: number;
+  responseToMessageId?: string; // For interruption tracking
 }
 
 /**
@@ -18,7 +19,8 @@ export class ResponseChunker {
   static chunkResponse(
     response: string,
     channel: MessageSource,
-    chunkingConfig?: ResponseChunking
+    chunkingConfig?: ResponseChunking,
+    responseToMessageId?: string
   ): ResponseChunk[] {
     // If chunking is disabled or not configured, return single chunk
     if (!chunkingConfig?.enabled || !chunkingConfig.rules[channel]) {
@@ -26,7 +28,8 @@ export class ResponseChunker {
         text: response,
         index: 0,
         total: 1,
-        delayMs: 0
+        delayMs: 0,
+        responseToMessageId
       }];
     }
 
@@ -38,7 +41,8 @@ export class ResponseChunker {
         text: response,
         index: 0,
         total: 1,
-        delayMs: 0
+        delayMs: 0,
+        responseToMessageId
       }];
     }
 
@@ -60,7 +64,8 @@ export class ResponseChunker {
       text: text.trim(),
       index,
       total: chunks.length,
-      delayMs: index === 0 ? 0 : rule.delayBetweenChunks
+      delayMs: index === 0 ? 0 : rule.delayBetweenChunks,
+      responseToMessageId
     }));
   }
 

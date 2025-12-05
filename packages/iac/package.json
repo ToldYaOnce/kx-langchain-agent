@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-langchain-agent-iac",
-  "version": "1.0.97",
+  "version": "1.0.187",
   "description": "CDK constructs and stacks for KxGen LangChain agent",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,8 +18,7 @@
     "diff": "cdk diff"
   },
   "dependencies": {
-    "@toldyaonce/kx-cdk-constructs": "^1.42.0",
-    "@toldyaonce/kx-langchain-agent-runtime": "1.1.77"
+    "@toldyaonce/kx-cdk-constructs": "^1.42.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",

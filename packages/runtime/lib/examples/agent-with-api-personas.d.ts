@@ -19,7 +19,10 @@ export declare class ApiPersonaAgentService extends AgentService {
         text: string;
         source: 'sms' | 'email' | 'chat' | 'api' | 'agent';
         personaId?: string;
-    }): Promise<string>;
+    }): Promise<{
+        response: string;
+        followUpQuestion?: string;
+    }>;
     private getDefaultPersona;
 }
 /**
@@ -37,4 +40,7 @@ export declare function createApiPersonaAgent(config: {
 /**
  * Example usage in a Lambda handler
  */
-export declare function exampleLambdaHandler(event: any, context: any): Promise<string>;
+export declare function exampleLambdaHandler(event: any, context: any): Promise<{
+    response: string;
+    followUpQuestion?: string;
+}>;

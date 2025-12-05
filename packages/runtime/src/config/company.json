@@ -1,0 +1,408 @@
+{
+  "tenantId": "tenant_1757418497028_g9o6mnb4m",
+  "address": {
+    "city": "Your City",
+    "country": "USA",
+    "state": "Your State",
+    "street": "123 Fitness Boulevard",
+    "zipCode": "12345"
+  },
+  "businessHours": {
+    "friday": [
+      {
+        "from": "05:00",
+        "to": "22:00"
+      }
+    ],
+    "monday": [
+      {
+        "from": "05:00",
+        "to": "11:00"
+      },
+      {
+        "from": "16:00",
+        "to": "23:00"
+      }
+    ],
+    "saturday": [
+      {
+        "from": "06:00",
+        "to": "21:00"
+      }
+    ],
+    "sunday": [
+      {
+        "from": "07:00",
+        "to": "20:00"
+      }
+    ],
+    "thursday": [
+      {
+        "from": "05:00",
+        "to": "23:00"
+      }
+    ],
+    "tuesday": [
+      {
+        "from": "05:00",
+        "to": "23:00"
+      }
+    ],
+    "wednesday": [
+      {
+        "from": "05:00",
+        "to": "12:00"
+      },
+      {
+        "from": "14:00",
+        "to": "23:00"
+      }
+    ]
+  },
+  "companyName": "KxGrynde Fitness",
+  "contactRequirements": {
+    "chat": [
+      "name",
+      "email",
+      "phone"
+    ],
+    "email": [
+      "name",
+      "phone"
+    ],
+    "sms": [
+      "name",
+      "email"
+    ]
+  },
+  "description": "Premium fitness center offering personalized training, group classes, and wellness programs",
+  "email": "info@kxgrynde.com",
+  "goalConfiguration": {
+    "enabled": true,
+    "globalSettings": {
+      "adaptToUrgency": true,
+      "interestThreshold": 5,
+      "maxActiveGoals": 3,
+      "maxGoalsPerTurn": 2,
+      "respectDeclines": true,
+      "strictOrdering": 7
+    },
+    "goals": [
+      {
+        "adherence": 6,
+        "behavior": {
+          "backoffStrategy": "gentle",
+          "maxAttempts": 3
+        },
+        "dataToCapture": {
+          "fields": [
+            {
+              "label": "First Name",
+              "name": "firstName",
+              "required": true
+            },
+            {
+              "label": "Last Name",
+              "name": "lastName",
+              "required": true
+            }
+          ]
+        },
+        "description": "Get the user's name for personalization",
+        "id": "collect_identity_1764679735190",
+        "isPrimary": false,
+        "name": "Get Name",
+        "order": 1,
+        "priority": "high",
+        "triggers": {
+          "messageCount": 0
+        },
+        "type": "data_collection"
+      },
+      {
+        "adherence": 7,
+        "behavior": {
+          "backoffStrategy": "persistent",
+          "maxAttempts": 3
+        },
+        "dataToCapture": {
+          "fields": [
+            {
+              "label": "Primary Goal",
+              "name": "primaryGoal",
+              "required": true
+            },
+            {
+              "label": "Motivation Reason",
+              "name": "motivationReason",
+              "required": true
+            },
+            {
+              "label": "Motivation Categories",
+              "name": "motivationCategories",
+              "required": false
+            },
+            {
+              "label": "Timeline",
+              "name": "timeline",
+              "required": true
+            }
+          ]
+        },
+        "description": "Understand what the user wants to achieve",
+        "id": "assess_fitness_goals_1764679749064",
+        "isPrimary": false,
+        "name": "Assess Goals",
+        "order": 2,
+        "priority": "critical",
+        "triggers": {
+          "messageCount": 0
+        },
+        "type": "data_collection"
+      },
+      {
+        "actions": {
+          "onComplete": [
+            {
+              "eventName": "appointment.consultation_requested",
+              "payload": {
+                "appointmentType": "fitness_consultation",
+                "duration": 60
+              },
+              "type": "trigger_scheduling_flow"
+            }
+          ]
+        },
+        "adherence": 7,
+        "behavior": {
+          "backoffStrategy": "gentle",
+          "maxAttempts": 5
+        },
+        "dataToCapture": {
+          "fields": [
+            {
+              "label": "Preferred Date",
+              "name": "preferredDate",
+              "required": true
+            },
+            {
+              "label": "Preferred Time",
+              "name": "preferredTime",
+              "required": true
+            }
+          ]
+        },
+        "description": "Book initial consultation or training session",
+        "id": "schedule_consultation_1764679764771",
+        "isPrimary": true,
+        "name": "Schedule Session",
+        "order": 3,
+        "priority": "high",
+        "triggers": {
+          "messageCount": 0,
+          "prerequisiteGoals": [
+            "assess_fitness_goals_1764679749064",
+            "collect_identity_1764679735190"
+          ]
+        },
+        "type": "scheduling"
+      },
+      {
+        "actions": {
+          "onComplete": [
+            {
+              "eventName": "lead.contact_captured",
+              "payload": {
+                "leadType": "inbound_fitness",
+                "source": "chat_agent"
+              },
+              "type": "convert_anonymous_to_lead"
+            }
+          ]
+        },
+        "adherence": 8,
+        "behavior": {
+          "backoffStrategy": "persistent",
+          "maxAttempts": 5
+        },
+        "dataToCapture": {
+          "fields": [
+            {
+              "label": "Phone",
+              "name": "phone",
+              "required": true
+            },
+            {
+              "label": "Email",
+              "name": "email",
+              "required": true
+            }
+          ]
+        },
+        "description": "Get contact information for follow-up",
+        "id": "collect_contact_info_1764848854242",
+        "name": "Contact Info",
+        "order": 4,
+        "priority": "critical",
+        "triggers": {
+          "messageCount": 0,
+          "prerequisiteGoals": [
+            "schedule_consultation_1764679764771"
+          ]
+        },
+        "type": "data_collection"
+      },
+      {
+        "adherence": 6,
+        "behavior": {
+          "backoffStrategy": "gentle",
+          "maxAttempts": 3
+        },
+        "dataToCapture": {
+          "fields": [
+            {
+              "label": "Height",
+              "name": "height",
+              "required": true
+            },
+            {
+              "label": "Weight",
+              "name": "weight",
+              "required": true
+            },
+            {
+              "label": "Body Fat Percentage",
+              "name": "bodyFatPercentage",
+              "required": true
+            }
+          ]
+        },
+        "description": "Assess current fitness level and body composition",
+        "id": "collect_body_metrics_1764679783206",
+        "isPrimary": false,
+        "name": "Body Metrics",
+        "order": 5,
+        "priority": "high",
+        "triggers": {
+          "messageCount": 0
+        },
+        "type": "data_collection"
+      },
+      {
+        "adherence": 9,
+        "behavior": {
+          "backoffStrategy": "persistent",
+          "maxAttempts": 3,
+          "message": "For your safety, I need to know about any injuries or health conditions that might affect your training"
+        },
+        "dataToCapture": {
+          "fields": [
+            {
+              "label": "Injuries",
+              "name": "injuries",
+              "required": true
+            },
+            {
+              "label": "Medical Conditions",
+              "name": "medicalConditions",
+              "required": true
+            },
+            {
+              "label": "Physical Limitations",
+              "name": "physicalLimitations",
+              "required": true
+            },
+            {
+              "label": "Doctor Clearance",
+              "name": "doctorClearance",
+              "required": true
+            }
+          ]
+        },
+        "description": "Identify any injuries, medical conditions, or physical limitations for safety",
+        "id": "assess_injuries_1764679793721",
+        "isPrimary": false,
+        "name": "Injuries & Limitations",
+        "order": 6,
+        "priority": "critical",
+        "triggers": {
+          "messageCount": 1
+        },
+        "type": "data_collection"
+      }
+    ]
+  },
+  "industry": "Fitness & Wellness",
+  "phone": "+1-555-KXGRYNDE",
+  "responseGuidelines": {
+    "contactPolicy": {
+      "allowBasicInfoWithoutContact": true,
+      "requireContactForDetails": true
+    },
+    "informationCategories": [
+      {
+        "column": "never",
+        "id": "migrated_pricing_0",
+        "label": "Pricing"
+      },
+      {
+        "column": "require",
+        "id": "migrated_scheduling_1",
+        "label": "Scheduling"
+      },
+      {
+        "column": "require",
+        "id": "migrated_detailedhours_2",
+        "label": "Detailed Hours"
+      },
+      {
+        "column": "require",
+        "id": "migrated_membershipinfo_3",
+        "label": "Membership Info"
+      },
+      {
+        "column": "require",
+        "id": "migrated_classavailability_4",
+        "label": "Class Availability"
+      },
+      {
+        "column": "never",
+        "id": "migrated_personaltrainingrates_5",
+        "label": "Personal Training Rates"
+      },
+      {
+        "column": "always",
+        "id": "migrated_promotions_6",
+        "label": "Promotions"
+      },
+      {
+        "column": "require",
+        "id": "migrated_specificprograms_7",
+        "label": "Specific Programs"
+      }
+    ],
+    "sharingPermissions": {
+      "allowedValues": [
+        "always_allowed",
+        "contact_required",
+        "never_share"
+      ],
+      "default": "contact_required",
+      "overrides": {
+        "basicInfo": "always_allowed",
+        "contactInformation": "always_allowed",
+        "generalServices": "always_allowed",
+        "location": "always_allowed"
+      }
+    }
+  },
+  "services": [
+    "Personal Training",
+    "Group Fitness Classes",
+    "Nutrition Coaching",
+    "Wellness Programs",
+    "Equipment Training"
+  ],
+  "updatedAt": "2025-12-04T15:27:40.317Z",
+  "website": "https://kxgrynde.com"
+}

@@ -5,6 +5,8 @@ export interface ChatOptions {
     source: MessageSource;
     model?: string;
     persona?: string;
+    conversationId?: string;
+    session?: string;
     company?: string;
     industry?: string;
     description?: string;
@@ -14,7 +16,6 @@ export interface ChatOptions {
     differentiators?: string;
     rag?: boolean;
     historyLimit: string;
-    session?: string;
     debug?: boolean;
 }
 export declare function chatCommand(options: ChatOptions): Promise<void>;

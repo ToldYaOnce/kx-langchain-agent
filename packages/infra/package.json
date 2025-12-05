@@ -1,6 +1,6 @@
 {
   "name": "@toldyaonce/kx-delayed-replies-infra",
-  "version": "1.1.60",
+  "version": "1.1.142",
   "description": "CDK infrastructure for delayed agent replies system",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -54,6 +54,6 @@
     "README.md"
   ],
   "dependencies": {
-    "@toldyaonce/kx-langchain-agent-runtime": "1.1.107"
+    "@toldyaonce/kx-langchain-agent-runtime": "1.1.213"
   }
 }

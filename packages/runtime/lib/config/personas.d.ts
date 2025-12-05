@@ -90,15 +90,32 @@ export interface AgentPersona {
     systemPrompt: string;
     personalityTraits?: PersonalityTraits;
     personalityQuirks?: string[];
-    /** @deprecated Use personalityTraits and personalityQuirks instead - kept for backward compatibility */
+    /** Old format - kept for backward compatibility */
     personality?: {
-        tone: string;
-        style: string;
+        tone?: string;
+        style?: string;
         languageQuirks?: string[];
         specialBehaviors?: string[];
+        communicationStyle?: string;
+        expertise?: string[];
+        nickname?: string;
+        personalityQuirks?: string[];
+        terminology?: Record<string, string>;
+        traits?: string[];
     };
-    responseGuidelines: string[];
-    greetings?: GreetingConfig;
+    responseGuidelines?: string[] | {
+        conversationRules?: {
+            aiDisclosure?: boolean;
+            casualGreetingResponse?: string;
+            reintroductionPolicy?: string;
+            useStageDirections?: boolean;
+        };
+    };
+    greetings?: GreetingConfig | {
+        gist?: string;
+        variations?: string[];
+    };
+    greetingConfig?: GreetingConfig;
     responseChunking?: ResponseChunking;
     intentCapturing?: IntentCapturing;
     goalConfiguration?: GoalConfiguration;

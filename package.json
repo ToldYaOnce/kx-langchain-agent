@@ -11,9 +11,12 @@
     "build": "yarn workspaces foreach -A run build",
     "dev:cli": "tsx packages/cli/bin/kxagent.ts",
     "watch:cli": "tsx watch packages/cli/bin/kxagent.ts",
+    "watch:runtime": "cd packages/runtime && tsc --watch --preserveWatchOutput",
     "chat": "tsx packages/cli/bin/kxagent.ts chat --tenantId dev-test --email dev@example.com --persona carlos --debug",
     "simple-chat": "tsx packages/cli/bin/kxagent.ts simple-chat --tenantId dev-test --email dev@example.com --persona carlos --debug",
-    "dev:chat": "tsx watch --ignore node_modules --ignore .git --ignore '*.log' --ignore '.env*' packages/cli/bin/kxagent.ts simple-chat --tenantId dev-test --email dev@example.com --persona carlos --debug",
+    "dev:chat": "concurrently --kill-others --raw \"npm run watch:runtime\" \"node packages/cli/lib/bin/kxagent.js simple-chat --tenantId dev-test --email dev@example.com --persona carlos --company 'KxGrynde Fitness' --debug\"",
+    "dev:chat-tsx": "concurrently --kill-others --raw \"npm run watch:runtime\" \"tsx --no-cache packages/cli/bin/kxagent.ts simple-chat --tenantId dev-test --email dev@example.com --persona carlos --debug\"",
+    "dev:chat-debug": "concurrently --kill-others --raw \"npm run watch:runtime\" \"tsx watch --inspect --ignore node_modules --ignore .git --ignore '*.log' --ignore '.env*' packages/cli/bin/kxagent.ts simple-chat --tenantId dev-test --email dev@example.com --persona carlos --debug\"",
     "dev:chat-stable": "tsx packages/cli/bin/kxagent.ts simple-chat --tenantId dev-test --email dev@example.com --persona carlos --debug",
     "test:goals": "tsx packages/cli/bin/kxagent.ts test-goals --tenantId dev-test --email dev@example.com --persona carlos",
     "test:conversations": "tsx packages/cli/bin/kxagent.ts test-conversations",
@@ -29,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "20.19.24",
+    "concurrently": "^9.1.0",
     "tsx": "4.20.5",
     "typescript": "^5.0.0"
   },
@@ -38,6 +42,7 @@
   "dependencies": {
     "@langchain/aws": "0.1.15",
     "@langchain/core": "0.3.77",
+    "@toldyaonce/kx-langchain-agent-iac": "1.0.147",
     "chalk": "5.6.2",
     "commander": "11.1.0",
     "dotenv": "16.6.1",

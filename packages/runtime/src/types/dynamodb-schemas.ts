@@ -424,6 +424,10 @@ export interface CompanyInfo {
   hours?: Record<string, { open: string; close: string; is24Hours?: boolean }>;
   /** Time zone */
   timezone?: string;
+  /** Company-level goal configuration (overrides persona-level goals) */
+  goalConfiguration?: GoalConfiguration;
+  /** Response guidelines including sharing permissions */
+  responseGuidelines?: ResponseGuidelines;
 }
 
 /**
@@ -443,6 +447,50 @@ export interface PersonalityConfig {
 /**
  * Response guidelines for the AI
  */
+/**
+ * Information category for three-tier sharing control
+ */
+export interface InformationCategory {
+  /** Unique identifier */
+  id: string;
+  /** Human-readable label */
+  label: string;
+  /** Sharing tier: "always", "require", or "never" */
+  column: 'always' | 'require' | 'never';
+}
+
+/**
+ * Three-tier sharing permissions configuration
+ */
+export interface SharingPermissions {
+  /** Information that can always be shared without contact info */
+  alwaysAllowed?: string[];
+  /** Information that requires contact info before sharing */
+  requiresContact?: string[];
+  /** Information that should never be shared by the AI */
+  neverShare?: string[];
+  /** Default permission level for uncategorized information */
+  defaultPermission?: 'always_allowed' | 'contact_required' | 'never_share';
+  
+  // Legacy format support (deprecated but maintained for backwards compatibility)
+  /** @deprecated Use alwaysAllowed, requiresContact, neverShare instead */
+  allowedValues?: string[];
+  /** @deprecated Use defaultPermission instead */
+  default?: string;
+  /** @deprecated Use specific arrays instead */
+  overrides?: Record<string, string>;
+}
+
+/**
+ * Contact policy configuration
+ */
+export interface ContactPolicy {
+  /** Allow sharing basic info without contact */
+  allowBasicInfoWithoutContact?: boolean;
+  /** Require contact for detailed information */
+  requireContactForDetails?: boolean;
+}
+
 export interface ResponseGuidelines {
   /** Maximum response length by channel */
   lengthLimits?: {
@@ -459,6 +507,12 @@ export interface ResponseGuidelines {
   prohibitions?: string[];
   /** Required disclaimers or legal text */
   disclaimers?: string[];
+  /** Contact policy configuration */
+  contactPolicy?: ContactPolicy;
+  /** Information categories with sharing tiers (UI format) */
+  informationCategories?: InformationCategory[];
+  /** Three-tier sharing permissions configuration */
+  sharingPermissions?: SharingPermissions;
 }
 
 /**
@@ -541,6 +595,10 @@ export interface GoalConfiguration {
     adaptToUrgency: boolean;
     /** Interest threshold for goal activation */
     interestThreshold: number;
+    /** How strictly to follow goal order (1-10 scale) */
+    strictOrdering?: number;
+    /** Maximum goals to pursue per turn */
+    maxGoalsPerTurn?: number;
   };
   /** Goal completion triggers */
   completionTriggers: {
@@ -573,18 +631,75 @@ export interface GoalDefinition {
   /** Goal description */
   description: string;
   /** Goal type */
-  type: 'collect_info' | 'schedule_action' | 'qualify_lead' | 'custom';
+  type: 'conversation' | 'data_collection' | 'action_trigger' | 'collect_info' | 'schedule_action' | 'scheduling' | 'qualify_lead' | 'validate_info' | 'custom';
   /** Goal priority */
   priority: 'critical' | 'high' | 'medium' | 'low';
+  /** Suggested order in conversation flow (1, 2, 3...) */
+  order?: number;
+  /** How strictly to adhere to this goal (1-10 scale) */
+  adherence?: number;
+  /** 
+   * Is this the PRIMARY conversion goal for the workflow?
+   * Only ONE goal should have isPrimary: true per workflow.
+   * When user shows intent toward this goal, fast-tracking activates.
+   */
+  isPrimary?: boolean;
+  /**
+   * Goal IDs that MUST be completed before this goal can complete.
+   * Used with isPrimary for fast-tracking: skip non-prerequisite goals when user shows high intent.
+   * Example: ["collect_identity", "collect_contact_info"]
+   */
+  prerequisites?: string[];
   /** Target information to collect */
-  target: {
+  target?: {
     /** Field name to collect */
     field: string;
     /** Regex patterns for extraction */
     extractionPatterns: string[];
   };
+  /** Data to capture for data_collection goals */
+  dataToCapture?: {
+    /** 
+     * NEW FORMAT: Array of field objects with name, required, and type
+     * EXAMPLE: [{ label: "First Name", name: "firstName", required: true, type: "text" }]
+     */
+    fields: Array<{
+      label?: string; // Optional human-readable label for UI
+      name: string;
+      required: boolean;
+      type?: 'text' | 'email' | 'phone' | 'date' | 'time' | 'number';
+    }> | string[]; // Support old format (string array) for backward compatibility
+    
+    /** 
+     * DEPRECATED: Old format validation rules (use field.type instead)
+     * Kept for backward compatibility
+     */
+    validationRules?: Record<string, any>;
+    
+    /**
+     * DEPRECATED: Use field.required instead
+     * Kept for backward compatibility
+     */
+    completionStrategy?: 'all' | 'any' | 'required_only';
+  };
+  /** Triggers that activate this goal */
+  triggers?: {
+    /** Goals that must be completed before this goal can activate (replaces afterGoals) */
+    prerequisiteGoals?: string[];
+    /** @deprecated Use prerequisiteGoals instead - will be removed in future version */
+    afterGoals?: string[];
+    /** User signals that activate this goal */
+    userSignals?: string[];
+    /** Activate after N messages */
+    messageCount?: number;
+  };
+  /** Actions to trigger when goal completes */
+  actions?: {
+    /** Actions to run on completion */
+    onComplete?: ActionTrigger[];
+  };
   /** Timing configuration */
-  timing: {
+  timing?: {
     /** Approach strategy */
     approach: 'immediate' | 'coercive' | 'natural' | 'opportunistic';
     /** Minimum messages before activation */
@@ -594,8 +709,17 @@ export interface GoalDefinition {
     /** Conditions for activation */
     conditions: string[];
   };
+  /** Behavior configuration */
+  behavior?: {
+    /** What to say/ask */
+    message: string;
+    /** Maximum attempts */
+    maxAttempts: number;
+    /** Backoff strategy */
+    backoffStrategy: 'gentle' | 'persistent' | 'aggressive';
+  };
   /** Messages for goal pursuit */
-  messages: {
+  messages?: {
     /** Initial request message */
     request: string;
     /** Follow-up message */
@@ -610,6 +734,20 @@ export interface GoalDefinition {
     /** Whether to skip this goal for this channel */
     skip?: boolean;
   }>;
+}
+
+/**
+ * Action trigger for goal completion
+ */
+export interface ActionTrigger {
+  /** Action type */
+  type: 'convert_anonymous_to_lead' | 'trigger_scheduling_flow' | 'send_notification' | 'update_crm' | 'custom';
+  /** EventBridge event name to publish */
+  eventName?: string;
+  /** Additional payload to include in the event */
+  payload?: Record<string, any>;
+  /** Action configuration (legacy, use payload instead) */
+  config?: Record<string, any>;
 }
 
 /**
@@ -734,6 +872,141 @@ export interface PersonaItem {
   /** Who last updated the persona */
   updated_by?: string;
 }
+
+// =============================================================================
+// CHANNEL WORKFLOW TRACKING
+// =============================================================================
+
+/**
+ * Channel workflow state for tracking goal progress across messages
+ * Stored in kx-channels table as nested object
+ */
+/**
+ * Language profile for personalization
+ */
+export interface LanguageProfile {
+  formality: number;      // 1-5: 1=very casual, 5=very formal
+  hypeTolerance: number;  // 1-5: 1=calm/factual, 5=loves energy/hype
+  emojiUsage: number;     // 0-5: emoji usage frequency
+  language: string;       // ISO code (e.g., "en", "es")
+}
+
+/**
+ * Per-message analysis snapshot
+ */
+export interface MessageAnalysis {
+  messageIndex: number;             // Which message in the conversation (1-based)
+  timestamp: string;                // ISO timestamp
+  messageText: string;              // The actual user message (for matching/debugging)
+  interestLevel: number;            // 1-5
+  conversionLikelihood: number;     // 0-1
+  emotionalTone: string;            // "positive", "neutral", etc.
+  languageProfile: LanguageProfile;
+  primaryIntent: string;            // What the user was trying to do
+}
+
+/**
+ * Rolling aggregates for conversation analytics
+ */
+export interface ConversationAggregates {
+  engagementScore: number;          // 0-1: overall engagement score
+  avgInterestLevel: number;         // 1-5: average interest across messages
+  avgConversionLikelihood: number;  // 0-1: average conversion likelihood
+  dominantEmotionalTone: string;    // Most frequent emotional tone
+  languageProfile: LanguageProfile; // Aggregated language preferences
+  messageAnalysisCount: number;     // Number of messages analyzed (for averaging)
+  
+  /** Per-message history for trend analysis (capped at last 50 messages) */
+  messageHistory?: MessageAnalysis[];
+  
+  /** Emotional tone frequency map */
+  emotionalToneFrequency?: Record<string, number>;
+}
+
+export interface ChannelWorkflowState {
+  /** Contact tracking flags */
+  isEmailCaptured: boolean;
+  isPhoneCaptured: boolean;
+  isFirstNameCaptured: boolean;
+  isLastNameCaptured: boolean;
+  
+  /** Captured data (with actual values) */
+  capturedData: Record<string, any>;
+  
+  /** Goal tracking */
+  completedGoals: string[];
+  activeGoals: string[];
+  currentGoalOrder: number;
+  
+  /** Fast-track mode: ordered list of goal IDs to pursue (prerequisites + primary) */
+  fastTrackGoals?: string[];
+  
+  /** Message tracking */
+  messageCount: number;
+  lastProcessedMessageId?: string; // Track last message we processed to prevent duplicate responses
+  
+  /** Metadata */
+  lastUpdated: Timestamp;
+  
+  /** Events emitted */
+  emittedEvents: string[];
+  
+  /** Conversation analytics aggregates (rolling averages) */
+  conversationAggregates?: ConversationAggregates;
+}
+
+/**
+ * Channel item stored in kx-channels table
+ * Primary Key: channelId + createdAt (composite)
+ * 
+ * SPECIAL ITEM TYPES (determined by createdAt value):
+ * - Normal timestamp (ISO 8601): Regular channel state with workflow tracking
+ * - "ACTIVE_RESPONSE": Message tracking for interruption handling (TTL enabled)
+ */
+export interface ChannelItem {
+  /** Channel identifier (partition key) */
+  channelId: string;
+  
+  /** Sort key: ISO timestamp OR "ACTIVE_RESPONSE" for message tracking */
+  createdAt: string;
+  
+  /** Tenant identifier */
+  tenantId: TenantId;
+  
+  /** Channel type */
+  channel_type?: MessageSource;
+  
+  /** Whether channel is active */
+  active?: boolean;
+  
+  /** Assigned persona/bot ID */
+  botEmployeeId?: string;
+  personaId?: string;
+  
+  /** Workflow state (for goal orchestration) - only for regular items */
+  workflowState?: ChannelWorkflowState;
+  
+  /** Message tracking (only when createdAt = "ACTIVE_RESPONSE") */
+  messageId?: string;
+  senderId?: string;
+  startedAt?: Timestamp;
+  stateSnapshot?: {
+    attemptCounts: Record<string, number>;
+    capturedData: Record<string, any>;
+    activeGoals: string[];
+    completedGoals: string[];
+    messageCount: number;
+  };
+  
+  /** TTL for message tracking items (unix timestamp) */
+  ttl?: number;
+  
+  /** Audit fields */
+  updated_at?: Timestamp;
+}
+
+// Message tracking is now part of ChannelItem (see above)
+// When createdAt = "ACTIVE_RESPONSE", the item tracks active message responses
 
 // =============================================================================
 // ZOD SCHEMAS FOR VALIDATION

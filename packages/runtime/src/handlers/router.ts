@@ -12,7 +12,7 @@ export async function handler(
   event: EventBridgeEvent<string, any>,
   context: Context
 ): Promise<void> {
-  console.log('🔥 1.0 ROUTER HANDLER START - v1.3.7');
+  console.log('🔥 1.0 ROUTER HANDLER START - v1.4.0');
   console.log('AgentRouter received event:', JSON.stringify(event, null, 2));
   
   try {
@@ -37,8 +37,9 @@ export async function handler(
       // The agent sets several fields to identify its messages, check them all
       
       // First, check if the sender (actual message author) is an agent persona
-      // Load channel to see which persona is assigned to this channel
+      // Load channel to see which persona(s) are assigned to this channel
       let assignedPersonaId: string | undefined;
+      let botEmployeeIds: string[] = [];
       try {
         const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
         const { DynamoDBDocumentClient, QueryCommand } = await import('@aws-sdk/lib-dynamodb');
@@ -47,7 +48,7 @@ export async function handler(
         
         // Query by channelId (PK) - channels table uses channelId as PK, not composite key
         const channelResult = await docClient.send(new QueryCommand({
-          TableName: process.env.CHANNELS_TABLE || 'kx-channels',
+          TableName: process.env.CHANNELS_TABLE || 'KxGen-channels-v2',
           KeyConditionExpression: 'channelId = :channelId',
           ExpressionAttributeValues: {
             ':channelId': event.detail.channelId
@@ -55,15 +56,37 @@ export async function handler(
           Limit: 1
         }));
         
+        console.log(`🔥 1.2.1.0.2 Query result: Items count=${channelResult.Items?.length}, tableName=${process.env.CHANNELS_TABLE || 'kx-channels'}`);
         const channelData = channelResult.Items?.[0];
-        assignedPersonaId = channelData?.botEmployeeId || channelData?.personaId; // Check both field names
-        console.log(`🔥 1.2.1.0.3 Channel ${event.detail.channelId} has assignedPersona: ${assignedPersonaId} (from botEmployeeId)`);
+        console.log(`🔥 1.2.1.0.2.5 Channel data: ${JSON.stringify(channelData)}`);
+        // Support both botEmployeeIds (array) and botEmployeeId (singular, backward compat)
+        botEmployeeIds = channelData?.botEmployeeIds || (channelData?.botEmployeeId ? [channelData.botEmployeeId] : []) || (channelData?.personaId ? [channelData.personaId] : []);
+        assignedPersonaId = process.env.PERSONA_ID || 'default'; // This Lambda's persona ID from environment
+        console.log(`🔥 1.2.1.0.3 Channel ${event.detail.channelId} has botEmployeeIds: ${JSON.stringify(botEmployeeIds)}, this Lambda's personaId: ${assignedPersonaId}`);
       } catch (error) {
         console.error('🔥 1.2.1.0.2 ERROR - Failed to load channel:', error);
       }
       
-      // Check if the senderId matches the assigned persona (meaning the AI sent this message)
-      const isSenderTheAgent = assignedPersonaId && chatDetail.senderId === assignedPersonaId;
+      // Check if the senderId matches ANY of the assigned personas (meaning an AI sent this message)
+      const isSenderTheAgent = botEmployeeIds.includes(chatDetail.senderId);
+      
+      // Check if this event is FOR a human participant (not a bot)
+      // The fanout creates events for ALL channel participants (humans + bots)
+      // We should ONLY process events where userId is a bot persona
+      const isRecipientTheBot = botEmployeeIds.includes(chatDetail.userId);
+      
+      if (!isRecipientTheBot) {
+        console.log('🔥 1.2.1.0.5 SKIPPING - Event is for human participant, not bot');
+        console.log(`userId=${chatDetail.userId}, botEmployeeIds=${JSON.stringify(botEmployeeIds)}`);
+        return; // Don't process events meant for human participants
+      }
+      
+      // CRITICAL: If the sender is a bot, skip immediately to avoid infinite loops
+      if (isSenderTheAgent) {
+        console.log('🔥 1.2.1.0.6 SKIPPING - Sender is a bot (early check)');
+        console.log(`senderId=${chatDetail.senderId}, botEmployeeIds=${JSON.stringify(botEmployeeIds)}`);
+        return;
+      }
       
       const isAgentMessage = 
         isSenderTheAgent || // The actual sender is the AI agent persona
@@ -112,7 +135,7 @@ export async function handler(
           const docClient = DynamoDBDocumentClient.from(client);
           
           const result = await docClient.send(new GetCommand({
-            TableName: config.personasTable || process.env.PERSONAS_TABLE || 'DelayedReplies-personas',
+            TableName: config.personasTable || process.env.PERSONAS_TABLE || 'personas',
             Key: {
               tenantId: tenantId,
               personaId: chatDetail.userId
@@ -134,11 +157,9 @@ export async function handler(
         throw new Error(`Could not determine tenantId from personaId: ${chatDetail.userId}`);
       }
       
-      // Guard: Only respond if this message is FOR the assigned bot
-      if (assignedPersonaId && chatDetail.userId !== assignedPersonaId) {
-        console.log(`🔥 1.2.1.0.4 SKIPPING - Message is for userId=${chatDetail.userId}, but assigned bot is ${assignedPersonaId}`);
-        return;
-      }
+      // No guard needed - we'll load whatever persona is assigned in botEmployeeIds
+      // All Lambdas process the message and load the assigned persona(s) dynamically
+      console.log(`✅ Processing message - will load persona(s) from botEmployeeIds: ${JSON.stringify(botEmployeeIds)}`);
       
       detail = {
         tenantId,
@@ -161,7 +182,8 @@ export async function handler(
         channelId: chatDetail.channelId,
         userId: chatDetail.userId, // Persona ID (the agent)
         senderId: chatDetail.senderId, // User ID (the human)
-        assignedPersonaId: assignedPersonaId, // Store for agent invocation
+        assignedPersonaId: assignedPersonaId, // Store for agent invocation (backward compat)
+        botEmployeeIds: botEmployeeIds, // Array of persona IDs to process
         userName: personaName, // Use the persona's actual name
         connectionId: chatDetail.connectionId // Pass through the connectionId for response routing
       };
@@ -240,23 +262,35 @@ export async function handler(
     // Invoke AgentFn with the processed context
     const { handler: agentHandler } = await import('./agent.js');
     
-    await agentHandler({
-      tenantId: detail.tenantId,
-      email_lc: emailLc,
-      text: detail.text,
-      source: detail.source,
-      channel_context: detail.channel_context,
-      lead_id: leadId,
-      conversation_id: detail.conversation_id,
-      message_ts: new Date().toISOString(), // Use current timestamp since we're not storing
-      // Pass chat-specific context for response emission
-      channelId: detail.channelId,
-      userId: detail.assignedPersonaId || detail.userId, // Use channel's assigned bot (King Mo), not recipient
-      senderId: detail.senderId, // User ID (human sender)
-      userName: detail.userName,
-    }, context);
+    // Get botEmployeeIds from detail (set earlier when loading channel)
+    const personaIds = (detail as any).botEmployeeIds || [detail.assignedPersonaId || detail.userId];
     
-    console.log('AgentRouter completed successfully');
+    console.log(`🔥 1.4 Processing message for ${personaIds.length} persona(s): ${JSON.stringify(personaIds)}`);
+    
+    // Loop through each persona and generate a response
+    for (const personaId of personaIds) {
+      console.log(`🔥 1.4.${personaIds.indexOf(personaId) + 1} Generating response for persona: ${personaId}`);
+      
+      await agentHandler({
+        tenantId: detail.tenantId,
+        email_lc: emailLc,
+        text: detail.text,
+        source: detail.source,
+        channel_context: detail.channel_context,
+        lead_id: leadId,
+        conversation_id: detail.conversation_id,
+        message_ts: new Date().toISOString(),
+        // Pass chat-specific context for response emission
+        channelId: detail.channelId,
+        userId: personaId, // Current persona in loop
+        senderId: detail.senderId,
+        userName: detail.userName,
+      }, context);
+      
+      console.log(`✅ 1.4.${personaIds.indexOf(personaId) + 1} Completed response for persona: ${personaId}`);
+    }
+    
+    console.log(`AgentRouter completed successfully - processed ${personaIds.length} persona(s)`);
     
   } catch (error) {
     console.error('AgentRouter error:', error);

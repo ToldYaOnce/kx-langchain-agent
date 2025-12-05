@@ -363,6 +363,10 @@ export interface CompanyInfo {
     }>;
     /** Time zone */
     timezone?: string;
+    /** Company-level goal configuration (overrides persona-level goals) */
+    goalConfiguration?: GoalConfiguration;
+    /** Response guidelines including sharing permissions */
+    responseGuidelines?: ResponseGuidelines;
 }
 /**
  * AI personality configuration
@@ -380,6 +384,45 @@ export interface PersonalityConfig {
 /**
  * Response guidelines for the AI
  */
+/**
+ * Information category for three-tier sharing control
+ */
+export interface InformationCategory {
+    /** Unique identifier */
+    id: string;
+    /** Human-readable label */
+    label: string;
+    /** Sharing tier: "always", "require", or "never" */
+    column: 'always' | 'require' | 'never';
+}
+/**
+ * Three-tier sharing permissions configuration
+ */
+export interface SharingPermissions {
+    /** Information that can always be shared without contact info */
+    alwaysAllowed?: string[];
+    /** Information that requires contact info before sharing */
+    requiresContact?: string[];
+    /** Information that should never be shared by the AI */
+    neverShare?: string[];
+    /** Default permission level for uncategorized information */
+    defaultPermission?: 'always_allowed' | 'contact_required' | 'never_share';
+    /** @deprecated Use alwaysAllowed, requiresContact, neverShare instead */
+    allowedValues?: string[];
+    /** @deprecated Use defaultPermission instead */
+    default?: string;
+    /** @deprecated Use specific arrays instead */
+    overrides?: Record<string, string>;
+}
+/**
+ * Contact policy configuration
+ */
+export interface ContactPolicy {
+    /** Allow sharing basic info without contact */
+    allowBasicInfoWithoutContact?: boolean;
+    /** Require contact for detailed information */
+    requireContactForDetails?: boolean;
+}
 export interface ResponseGuidelines {
     /** Maximum response length by channel */
     lengthLimits?: {
@@ -396,6 +439,12 @@ export interface ResponseGuidelines {
     prohibitions?: string[];
     /** Required disclaimers or legal text */
     disclaimers?: string[];
+    /** Contact policy configuration */
+    contactPolicy?: ContactPolicy;
+    /** Information categories with sharing tiers (UI format) */
+    informationCategories?: InformationCategory[];
+    /** Three-tier sharing permissions configuration */
+    sharingPermissions?: SharingPermissions;
 }
 /**
  * Greeting configuration with variations
@@ -474,6 +523,10 @@ export interface GoalConfiguration {
         adaptToUrgency: boolean;
         /** Interest threshold for goal activation */
         interestThreshold: number;
+        /** How strictly to follow goal order (1-10 scale) */
+        strictOrdering?: number;
+        /** Maximum goals to pursue per turn */
+        maxGoalsPerTurn?: number;
     };
     /** Goal completion triggers */
     completionTriggers: {
@@ -505,18 +558,73 @@ export interface GoalDefinition {
     /** Goal description */
     description: string;
     /** Goal type */
-    type: 'collect_info' | 'schedule_action' | 'qualify_lead' | 'custom';
+    type: 'conversation' | 'data_collection' | 'action_trigger' | 'collect_info' | 'schedule_action' | 'scheduling' | 'qualify_lead' | 'validate_info' | 'custom';
     /** Goal priority */
     priority: 'critical' | 'high' | 'medium' | 'low';
+    /** Suggested order in conversation flow (1, 2, 3...) */
+    order?: number;
+    /** How strictly to adhere to this goal (1-10 scale) */
+    adherence?: number;
+    /**
+     * Is this the PRIMARY conversion goal for the workflow?
+     * Only ONE goal should have isPrimary: true per workflow.
+     * When user shows intent toward this goal, fast-tracking activates.
+     */
+    isPrimary?: boolean;
+    /**
+     * Goal IDs that MUST be completed before this goal can complete.
+     * Used with isPrimary for fast-tracking: skip non-prerequisite goals when user shows high intent.
+     * Example: ["collect_identity", "collect_contact_info"]
+     */
+    prerequisites?: string[];
     /** Target information to collect */
-    target: {
+    target?: {
         /** Field name to collect */
         field: string;
         /** Regex patterns for extraction */
         extractionPatterns: string[];
     };
+    /** Data to capture for data_collection goals */
+    dataToCapture?: {
+        /**
+         * NEW FORMAT: Array of field objects with name, required, and type
+         * EXAMPLE: [{ label: "First Name", name: "firstName", required: true, type: "text" }]
+         */
+        fields: Array<{
+            label?: string;
+            name: string;
+            required: boolean;
+            type?: 'text' | 'email' | 'phone' | 'date' | 'time' | 'number';
+        }> | string[];
+        /**
+         * DEPRECATED: Old format validation rules (use field.type instead)
+         * Kept for backward compatibility
+         */
+        validationRules?: Record<string, any>;
+        /**
+         * DEPRECATED: Use field.required instead
+         * Kept for backward compatibility
+         */
+        completionStrategy?: 'all' | 'any' | 'required_only';
+    };
+    /** Triggers that activate this goal */
+    triggers?: {
+        /** Goals that must be completed before this goal can activate (replaces afterGoals) */
+        prerequisiteGoals?: string[];
+        /** @deprecated Use prerequisiteGoals instead - will be removed in future version */
+        afterGoals?: string[];
+        /** User signals that activate this goal */
+        userSignals?: string[];
+        /** Activate after N messages */
+        messageCount?: number;
+    };
+    /** Actions to trigger when goal completes */
+    actions?: {
+        /** Actions to run on completion */
+        onComplete?: ActionTrigger[];
+    };
     /** Timing configuration */
-    timing: {
+    timing?: {
         /** Approach strategy */
         approach: 'immediate' | 'coercive' | 'natural' | 'opportunistic';
         /** Minimum messages before activation */
@@ -526,8 +634,17 @@ export interface GoalDefinition {
         /** Conditions for activation */
         conditions: string[];
     };
+    /** Behavior configuration */
+    behavior?: {
+        /** What to say/ask */
+        message: string;
+        /** Maximum attempts */
+        maxAttempts: number;
+        /** Backoff strategy */
+        backoffStrategy: 'gentle' | 'persistent' | 'aggressive';
+    };
     /** Messages for goal pursuit */
-    messages: {
+    messages?: {
         /** Initial request message */
         request: string;
         /** Follow-up message */
@@ -542,6 +659,19 @@ export interface GoalDefinition {
         /** Whether to skip this goal for this channel */
         skip?: boolean;
     }>;
+}
+/**
+ * Action trigger for goal completion
+ */
+export interface ActionTrigger {
+    /** Action type */
+    type: 'convert_anonymous_to_lead' | 'trigger_scheduling_flow' | 'send_notification' | 'update_crm' | 'custom';
+    /** EventBridge event name to publish */
+    eventName?: string;
+    /** Additional payload to include in the event */
+    payload?: Record<string, any>;
+    /** Action configuration (legacy, use payload instead) */
+    config?: Record<string, any>;
 }
 /**
  * Action tag configuration for UI elements
@@ -654,6 +784,111 @@ export interface PersonaItem {
     updated_by?: string;
 }
 /**
+ * Channel workflow state for tracking goal progress across messages
+ * Stored in kx-channels table as nested object
+ */
+/**
+ * Language profile for personalization
+ */
+export interface LanguageProfile {
+    formality: number;
+    hypeTolerance: number;
+    emojiUsage: number;
+    language: string;
+}
+/**
+ * Per-message analysis snapshot
+ */
+export interface MessageAnalysis {
+    messageIndex: number;
+    timestamp: string;
+    messageText: string;
+    interestLevel: number;
+    conversionLikelihood: number;
+    emotionalTone: string;
+    languageProfile: LanguageProfile;
+    primaryIntent: string;
+}
+/**
+ * Rolling aggregates for conversation analytics
+ */
+export interface ConversationAggregates {
+    engagementScore: number;
+    avgInterestLevel: number;
+    avgConversionLikelihood: number;
+    dominantEmotionalTone: string;
+    languageProfile: LanguageProfile;
+    messageAnalysisCount: number;
+    /** Per-message history for trend analysis (capped at last 50 messages) */
+    messageHistory?: MessageAnalysis[];
+    /** Emotional tone frequency map */
+    emotionalToneFrequency?: Record<string, number>;
+}
+export interface ChannelWorkflowState {
+    /** Contact tracking flags */
+    isEmailCaptured: boolean;
+    isPhoneCaptured: boolean;
+    isFirstNameCaptured: boolean;
+    isLastNameCaptured: boolean;
+    /** Captured data (with actual values) */
+    capturedData: Record<string, any>;
+    /** Goal tracking */
+    completedGoals: string[];
+    activeGoals: string[];
+    currentGoalOrder: number;
+    /** Fast-track mode: ordered list of goal IDs to pursue (prerequisites + primary) */
+    fastTrackGoals?: string[];
+    /** Message tracking */
+    messageCount: number;
+    lastProcessedMessageId?: string;
+    /** Metadata */
+    lastUpdated: Timestamp;
+    /** Events emitted */
+    emittedEvents: string[];
+    /** Conversation analytics aggregates (rolling averages) */
+    conversationAggregates?: ConversationAggregates;
+}
+/**
+ * Channel item stored in kx-channels table
+ * Primary Key: channelId + createdAt (composite)
+ *
+ * SPECIAL ITEM TYPES (determined by createdAt value):
+ * - Normal timestamp (ISO 8601): Regular channel state with workflow tracking
+ * - "ACTIVE_RESPONSE": Message tracking for interruption handling (TTL enabled)
+ */
+export interface ChannelItem {
+    /** Channel identifier (partition key) */
+    channelId: string;
+    /** Sort key: ISO timestamp OR "ACTIVE_RESPONSE" for message tracking */
+    createdAt: string;
+    /** Tenant identifier */
+    tenantId: TenantId;
+    /** Channel type */
+    channel_type?: MessageSource;
+    /** Whether channel is active */
+    active?: boolean;
+    /** Assigned persona/bot ID */
+    botEmployeeId?: string;
+    personaId?: string;
+    /** Workflow state (for goal orchestration) - only for regular items */
+    workflowState?: ChannelWorkflowState;
+    /** Message tracking (only when createdAt = "ACTIVE_RESPONSE") */
+    messageId?: string;
+    senderId?: string;
+    startedAt?: Timestamp;
+    stateSnapshot?: {
+        attemptCounts: Record<string, number>;
+        capturedData: Record<string, any>;
+        activeGoals: string[];
+        completedGoals: string[];
+        messageCount: number;
+    };
+    /** TTL for message tracking items (unix timestamp) */
+    ttl?: number;
+    /** Audit fields */
+    updated_at?: Timestamp;
+}
+/**
  * Zod schema for MessageItem validation
  */
 export declare const MessageItemSchema: z.ZodObject<{
@@ -675,17 +910,17 @@ export declare const MessageItemSchema: z.ZodObject<{
     created_at: z.ZodOptional<z.ZodString>;
     updated_at: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
+    text: string;
     contact_pk: string;
     ts: string;
     tenantId: string;
     email_lc: string;
     source: "sms" | "email" | "chat" | "api" | "voice" | "social";
     direction: "inbound" | "outbound";
-    text: string;
+    conversation_id?: string | undefined;
     lead_id?: string | undefined;
     channel_context?: Record<string, any> | undefined;
     meta?: Record<string, any> | undefined;
-    conversation_id?: string | undefined;
     GSI1PK?: string | undefined;
     GSI1SK?: string | undefined;
     GSI2PK?: string | undefined;
@@ -693,17 +928,17 @@ export declare const MessageItemSchema: z.ZodObject<{
     created_at?: string | undefined;
     updated_at?: string | undefined;
 }, {
+    text: string;
     contact_pk: string;
     ts: string;
     tenantId: string;
     email_lc: string;
     source: "sms" | "email" | "chat" | "api" | "voice" | "social";
     direction: "inbound" | "outbound";
-    text: string;
+    conversation_id?: string | undefined;
     lead_id?: string | undefined;
     channel_context?: Record<string, any> | undefined;
     meta?: Record<string, any> | undefined;
-    conversation_id?: string | undefined;
     GSI1PK?: string | undefined;
     GSI1SK?: string | undefined;
     GSI2PK?: string | undefined;
@@ -732,24 +967,24 @@ export declare const LeadItemSchema: z.ZodObject<{
         language: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         email: string;
-        preferredChannel?: "sms" | "email" | "chat" | "api" | "voice" | "social" | undefined;
+        phone?: string | undefined;
         firstName?: string | undefined;
         lastName?: string | undefined;
         fullName?: string | undefined;
-        phone?: string | undefined;
         company?: string | undefined;
         title?: string | undefined;
+        preferredChannel?: "sms" | "email" | "chat" | "api" | "voice" | "social" | undefined;
         timezone?: string | undefined;
         language?: string | undefined;
     }, {
         email: string;
-        preferredChannel?: "sms" | "email" | "chat" | "api" | "voice" | "social" | undefined;
+        phone?: string | undefined;
         firstName?: string | undefined;
         lastName?: string | undefined;
         fullName?: string | undefined;
-        phone?: string | undefined;
         company?: string | undefined;
         title?: string | undefined;
+        preferredChannel?: "sms" | "email" | "chat" | "api" | "voice" | "social" | undefined;
         timezone?: string | undefined;
         language?: string | undefined;
     }>;
@@ -774,8 +1009,8 @@ export declare const LeadItemSchema: z.ZodObject<{
         timeline: z.ZodOptional<z.ZodString>;
         notes: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
     }, "strip", z.ZodTypeAny, {
-        status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing";
         source: string;
+        status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing";
         score: number;
         campaign?: string | undefined;
         interestLevel?: number | undefined;
@@ -788,8 +1023,8 @@ export declare const LeadItemSchema: z.ZodObject<{
         timeline?: string | undefined;
         notes?: string[] | undefined;
     }, {
-        status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing";
         source: string;
+        status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing";
         score: number;
         campaign?: string | undefined;
         interestLevel?: number | undefined;
@@ -820,19 +1055,19 @@ export declare const LeadItemSchema: z.ZodObject<{
     sk: string;
     contactInfo: {
         email: string;
-        preferredChannel?: "sms" | "email" | "chat" | "api" | "voice" | "social" | undefined;
+        phone?: string | undefined;
         firstName?: string | undefined;
         lastName?: string | undefined;
         fullName?: string | undefined;
-        phone?: string | undefined;
         company?: string | undefined;
         title?: string | undefined;
+        preferredChannel?: "sms" | "email" | "chat" | "api" | "voice" | "social" | undefined;
         timezone?: string | undefined;
         language?: string | undefined;
     };
     qualification: {
-        status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing";
         source: string;
+        status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing";
         score: number;
         campaign?: string | undefined;
         interestLevel?: number | undefined;
@@ -861,19 +1096,19 @@ export declare const LeadItemSchema: z.ZodObject<{
     sk: string;
     contactInfo: {
         email: string;
-        preferredChannel?: "sms" | "email" | "chat" | "api" | "voice" | "social" | undefined;
+        phone?: string | undefined;
         firstName?: string | undefined;
         lastName?: string | undefined;
         fullName?: string | undefined;
-        phone?: string | undefined;
         company?: string | undefined;
         title?: string | undefined;
+        preferredChannel?: "sms" | "email" | "chat" | "api" | "voice" | "social" | undefined;
         timezone?: string | undefined;
         language?: string | undefined;
     };
     qualification: {
-        status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing";
         source: string;
+        status: "new" | "contacted" | "qualified" | "converted" | "lost" | "nurturing";
         score: number;
         campaign?: string | undefined;
         interestLevel?: number | undefined;
@@ -917,8 +1152,8 @@ export declare const PersonaItemSchema: z.ZodObject<{
     created_by: z.ZodOptional<z.ZodString>;
     updated_by: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    status: "active" | "draft" | "archived" | "template";
     tenantId: string;
+    status: "active" | "draft" | "archived" | "template";
     created_at: string;
     updated_at: string;
     sk: string;
@@ -936,8 +1171,8 @@ export declare const PersonaItemSchema: z.ZodObject<{
     popularityScore?: number | undefined;
     templateDescription?: string | undefined;
 }, {
-    status: "active" | "draft" | "archived" | "template";
     tenantId: string;
+    status: "active" | "draft" | "archived" | "template";
     created_at: string;
     updated_at: string;
     sk: string;

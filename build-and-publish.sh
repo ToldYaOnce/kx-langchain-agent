@@ -52,10 +52,12 @@ sleep 10
 echo "🔨 Building and publishing IaC package..."
 cd packages/iac
 echo "📦 Bumping IaC version..."
-npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
+npm version patch --no-git-tag-version
 rm -rf node_modules package-lock.json
-# Replace workspace dependency with actual version
-sed -i.bak 's/"@toldyaonce\/kx-langchain-agent-runtime": "workspace:\^"/"@toldyaonce\/kx-langchain-agent-runtime": "^1.0.0"/g' package.json
+# Replace workspace dependency with actual runtime version
+RUNTIME_VERSION=$(node -p "require('../runtime/package.json').version")
+sed -i.bak "s/\"@toldyaonce\/kx-langchain-agent-runtime\": \"workspace:\^\"/\"@toldyaonce\/kx-langchain-agent-runtime\": \"^$RUNTIME_VERSION\"/g" package.json
+echo "✅ Updated IAC to use runtime version: $RUNTIME_VERSION"
 # Registry is handled by publishConfig in package.json
 echo "🔄 Refreshing internal dependencies (removing stale packages)..."
 npm run refresh:deps || true
@@ -78,10 +80,13 @@ cd ../..
 echo "🔨 Building and publishing CLI package..."
 cd packages/cli
 echo "📦 Bumping CLI version..."
-npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
+npm version patch --no-git-tag-version
 rm -rf node_modules package-lock.json
-# Replace workspace dependency with actual version
-sed -i.bak 's/"@toldyaonce\/kx-langchain-agent-runtime": "workspace:\^"/"@toldyaonce\/kx-langchain-agent-runtime": "^1.0.0"/g' package.json
+# Replace file/workspace dependency with actual runtime version
+RUNTIME_VERSION=$(node -p "require('../runtime/package.json').version")
+sed -i.bak "s/\"@toldyaonce\/kx-langchain-agent-runtime\": \"file:..\/runtime\"/\"@toldyaonce\/kx-langchain-agent-runtime\": \"^$RUNTIME_VERSION\"/g" package.json
+sed -i.bak "s/\"@toldyaonce\/kx-langchain-agent-runtime\": \"workspace:\^\"/\"@toldyaonce\/kx-langchain-agent-runtime\": \"^$RUNTIME_VERSION\"/g" package.json
+echo "✅ Updated CLI to use runtime version: $RUNTIME_VERSION"
 # Registry is handled by publishConfig in package.json
 echo "🔄 Refreshing internal dependencies (removing stale packages)..."
 npm run refresh:deps || true
@@ -104,7 +109,7 @@ cd ../..
 echo "🔨 Building and publishing agent-core package..."
 cd packages/agent-core
 echo "📦 Bumping agent-core version..."
-npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
+npm version patch --no-git-tag-version
 rm -rf node_modules package-lock.json
 npm install
 npm run build
@@ -119,7 +124,7 @@ sleep 5
 echo "🔨 Building and publishing release-router package..."
 cd packages/release-router
 echo "📦 Bumping release-router version..."
-npm version patch --no-git-tag-version || echo "Version already bumped or at latest"
+npm version patch --no-git-tag-version
 rm -rf node_modules package-lock.json
 # Replace workspace dependency with actual version
 sed -i.bak 's/"@toldyaonce\/kx-agent-core": "workspace:\^"/"@toldyaonce\/kx-agent-core": "^1.0.0"/g' package.json
@@ -167,3 +172,8 @@ echo "🚀 Install delayed replies infrastructure:"
 echo "     npm install @toldyaonce/kx-delayed-replies-infra --registry https://npm.pkg.github.com"
 echo ""
 echo "💡 Note: All packages were automatically bumped to new patch versions"
+echo ""
+echo -e "\033[1;32m════════════════════════════════════════════════════════════════\033[0m"
+echo -e "\033[1;33m✨ BUILD & PUBLISH COMPLETE ✨\033[0m"
+echo -e "\033[1;36m🕐 Completed at: $(date '+%Y-%m-%d %H:%M:%S %Z')\033[0m"
+echo -e "\033[1;32m════════════════════════════════════════════════════════════════\033[0m"

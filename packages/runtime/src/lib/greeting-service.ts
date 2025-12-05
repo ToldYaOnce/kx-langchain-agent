@@ -20,9 +20,9 @@ export class GreetingService {
     // Replace company placeholders
     if (companyInfo) {
       greeting = greeting
-        .replace(/\{\{companyName\}\}/g, companyInfo.name || 'Planet Fitness')
+        .replace(/\{\{companyName\}\}/g, companyInfo.name || 'Planet Fitness1')
         .replace(/\{\{companyIndustry\}\}/g, companyInfo.industry || 'Big Box Gyms')
-        .replace(/\{\{companyDescription\}\}/g, companyInfo.description || 'Planet Fitness is a global franchisor and operator of fitness centers known as a "Judgement Free Zone" for casual gym-goers')
+        .replace(/\{\{companyDescription\}\}/g, companyInfo.description || 'Planet Fitness2 is a global franchisor and operator of fitness centers known as a "Judgement Free Zone" for casual gym-goers')
         .replace(/\{\{companyProducts\}\}/g, companyInfo.products || 'Big fitness but also has apparrel, coffee, and a cafe')
         .replace(/\{\{companyBenefits\}\}/g, companyInfo.benefits || 'Only $10 a month')
         .replace(/\{\{companyTargetCustomers\}\}/g, companyInfo.targetCustomers || 'People who seek value')
@@ -30,9 +30,9 @@ export class GreetingService {
     } else {
       // Default values
       greeting = greeting
-        .replace(/\{\{companyName\}\}/g, 'Planet Fitness')
+        .replace(/\{\{companyName\}\}/g, 'Planet Fitness3')
         .replace(/\{\{companyIndustry\}\}/g, 'Big Box Gyms')
-        .replace(/\{\{companyDescription\}\}/g, 'Planet Fitness is a global franchisor and operator of fitness centers known as a "Judgement Free Zone" for casual gym-goers')
+        .replace(/\{\{companyDescription\}\}/g, 'Planet Fitness4 is a global franchisor and operator of fitness centers known as a "Judgement Free Zone" for casual gym-goers')
         .replace(/\{\{companyProducts\}\}/g, 'Big fitness but also has apparrel, coffee, and a cafe')
         .replace(/\{\{companyBenefits\}\}/g, 'Only $10 a month')
         .replace(/\{\{companyTargetCustomers\}\}/g, 'People who seek value')
@@ -63,18 +63,18 @@ export class GreetingService {
       // Replace company placeholders
       if (companyInfo) {
         greeting = greeting
-          .replace(/\{\{companyName\}\}/g, companyInfo.name || 'Planet Fitness')
+          .replace(/\{\{companyName\}\}/g, companyInfo.name || 'Planet Fitness5')
           .replace(/\{\{companyIndustry\}\}/g, companyInfo.industry || 'Big Box Gyms')
-          .replace(/\{\{companyDescription\}\}/g, companyInfo.description || 'Planet Fitness is a global franchisor and operator of fitness centers')
+          .replace(/\{\{companyDescription\}\}/g, companyInfo.description || 'Planet Fitness6 is a global franchisor and operator of fitness centers')
           .replace(/\{\{companyProducts\}\}/g, companyInfo.products || 'Big fitness but also has apparrel, coffee, and a cafe')
           .replace(/\{\{companyBenefits\}\}/g, companyInfo.benefits || 'Only $10 a month')
           .replace(/\{\{companyTargetCustomers\}\}/g, companyInfo.targetCustomers || 'People who seek value')
           .replace(/\{\{companyDifferentiators\}\}/g, companyInfo.differentiators || 'Best prices');
       } else {
         greeting = greeting
-          .replace(/\{\{companyName\}\}/g, 'Planet Fitness')
+          .replace(/\{\{companyName\}\}/g, 'Planet Fitness7')
           .replace(/\{\{companyIndustry\}\}/g, 'Big Box Gyms')
-          .replace(/\{\{companyDescription\}\}/g, 'Planet Fitness is a global franchisor and operator of fitness centers')
+          .replace(/\{\{companyDescription\}\}/g, 'Planet Fitness8 is a global franchisor and operator of fitness centers')
           .replace(/\{\{companyProducts\}\}/g, 'Big fitness but also has apparrel, coffee, and a cafe')
           .replace(/\{\{companyBenefits\}\}/g, 'Only $10 a month')
           .replace(/\{\{companyTargetCustomers\}\}/g, 'People who seek value')

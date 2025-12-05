@@ -78,26 +78,21 @@ async function testGoalOrchestration(message: string, options: TestGoalsOptions)
       options.sessionId || 'test-session',
       options.email.toLowerCase(),
       options.tenantId,
-      persona.goalConfiguration
+      persona.goalConfiguration as any // Type compatibility - CLI uses different goal schema
     );
 
     // Display results
     console.log(chalk.cyan('\n📊 ORCHESTRATION RESULTS:'));
     
-    // Interest Analysis
-    console.log(chalk.magenta('\n🧠 Interest Analysis:'));
-    console.log(`   Interest Level: ${result.interestAnalysis.interestLevel}`);
-    console.log(`   Urgency Level: ${result.interestAnalysis.urgencyLevel}`);
-    console.log(`   Confidence: ${(result.interestAnalysis.confidence * 100).toFixed(1)}%`);
-    
-    if (result.interestAnalysis.indicators.positive.length > 0) {
-      console.log(`   Positive Indicators: ${result.interestAnalysis.indicators.positive.join(', ')}`);
+    // Goal State Summary
+    console.log(chalk.magenta('\n🎯 Goal Progress:'));
+    console.log(`   Active Goals: ${result.activeGoals.length}`);
+    console.log(`   Completed Goals: ${result.completedGoals.length}`);
+    if (result.stateUpdates.newlyCompleted.length > 0) {
+      console.log(`   Newly Completed: ${result.stateUpdates.newlyCompleted.join(', ')}`);
     }
-    if (result.interestAnalysis.indicators.negative.length > 0) {
-      console.log(`   Negative Indicators: ${result.interestAnalysis.indicators.negative.join(', ')}`);
-    }
-    if (result.interestAnalysis.indicators.urgency.length > 0) {
-      console.log(`   Urgency Indicators: ${result.interestAnalysis.indicators.urgency.join(', ')}`);
+    if (result.stateUpdates.newlyActivated.length > 0) {
+      console.log(`   Newly Activated: ${result.stateUpdates.newlyActivated.join(', ')}`);
     }
 
     // Extracted Information

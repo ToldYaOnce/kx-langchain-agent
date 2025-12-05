@@ -36,12 +36,13 @@ export class KxDynamoChatHistory extends BaseChatMessageHistory {
    * Get messages from DynamoDB and convert to LangChain message format
    */
   async getMessages(): Promise<BaseMessage[]> {
+    // Query in DESCENDING order (newest first) to get the LAST N messages
     const { items } = await this.dynamoService.getMessageHistory(
       this.tenantId,
       this.emailLc,
       {
         limit: this.historyLimit,
-        scanIndexForward: true, // Chronological order for LangChain
+        scanIndexForward: false, // DESCENDING order (newest first) to get last N
         conversationId: this.conversationId, // Pass conversation_id for targetKey queries
       }
     );
@@ -70,9 +71,10 @@ export class KxDynamoChatHistory extends BaseChatMessageHistory {
           console.log(`📚 Filtering out empty SystemMessage`);
         }
         return !isEmpty;
-      });
+      })
+      .reverse(); // Reverse to chronological order (oldest → newest) for LangChain
 
-    console.log(`📚 AFTER map and filter: ${messages.length} messages`);
+    console.log(`📚 AFTER map, filter, and reverse: ${messages.length} messages`);
     console.log(`📚 First message type: ${messages[0]?.constructor.name}`);
     console.log(`📚 First message content: ${JSON.stringify(messages[0]?.content).substring(0, 100)}`);
 

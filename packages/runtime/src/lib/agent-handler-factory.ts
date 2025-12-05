@@ -610,7 +610,7 @@ export function createEventBridgeHandler(
               eventBridgeService,
             });
             
-            const response = await agentService.processMessage({
+            const result = await agentService.processMessage({
               tenantId: detail.tenantId,
               email_lc: emailLc,
               text: detail.text,
@@ -620,6 +620,7 @@ export function createEventBridgeHandler(
               conversation_id: detail.conversation_id,
             });
             
+            const response = result.response;
             logger('info', `Generated response: ${response.substring(0, 100)}...`);
             
             // Store and publish response

@@ -1,0 +1,1704 @@
+================================================================================
+GOAL CONFIGURATION TEMPLATES FOR AI AGENT SYSTEM
+================================================================================
+
+This file contains pre-built goal configuration templates for different 
+industries. Each template provides a complete conversation flow optimized 
+for that industry's typical customer journey.
+
+================================================================================
+TEMPLATE STRUCTURE
+================================================================================
+
+Each template contains:
+- label: Industry name
+- description: What type of business it's for
+- goals: Array of goal objects with the following fields:
+  - id: Unique identifier
+  - label: UI-friendly name
+  - type: data_collection | scheduling | conversation
+  - order: Sequence number (1, 2, 3...)
+  - priority: critical | high | medium | low
+  - purpose: What this goal achieves
+  - adherence: 1-10 scale (how persistent the agent should be)
+  - triggers: When this goal activates
+  - dataToCapture: What information to collect
+  - behavior: How the agent pursues this goal
+  - actions: Events to trigger on completion (optional)
+
+================================================================================
+FITNESS & WELLNESS INDUSTRY
+================================================================================
+
+{
+  "label": "Fitness & Wellness",
+  "description": "For gyms, personal trainers, fitness coaches, and wellness centers",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "high",
+      "purpose": "Get the user's name for personalization",
+      "adherence": 6,
+      "triggers": {
+        "messageCount": 2
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "assess_fitness_goals",
+      "label": "Assess Goals",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Understand what the user wants to achieve",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["primaryGoal", "motivationReason", "timeline"],
+        "validationRules": {
+          "primaryGoal": { "required": true },
+          "motivationReason": { "required": false },
+          "timeline": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "collect_body_metrics",
+      "label": "Body Metrics",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "high",
+      "purpose": "Assess current fitness level and body composition",
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["assess_fitness_goals"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["height", "weight", "bodyFatPercentage"],
+        "validationRules": {
+          "height": { "required": true },
+          "weight": { "required": true },
+          "bodyFatPercentage": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "assess_experience",
+      "label": "Training Background",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "medium",
+      "purpose": "Understand training background and limitations",
+      "adherence": 5,
+      "triggers": {
+        "afterGoals": ["collect_body_metrics"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["trainingExperience", "injuries", "availability"],
+        "validationRules": {
+          "trainingExperience": { "required": true },
+          "injuries": { "required": false },
+          "availability": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 5,
+      "priority": "critical",
+      "purpose": "Get contact information for follow-up",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["assess_experience"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" },
+          "phone": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "inbound_fitness"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_consultation",
+      "label": "Schedule Session",
+      "type": "scheduling",
+      "order": 6,
+      "priority": "high",
+      "purpose": "Book initial consultation or training session",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "messageCount": 7
+      },
+      "dataToCapture": {
+        "fields": ["preferredDate", "preferredTime"],
+        "validationRules": {
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.consultation_requested",
+            "payload": {
+              "appointmentType": "fitness_consultation",
+              "duration": 60
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+REAL ESTATE INDUSTRY
+================================================================================
+
+{
+  "label": "Real Estate",
+  "description": "For real estate agents, brokers, and property management",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "high",
+      "purpose": "Get client's name",
+      "adherence": 6,
+      "triggers": {
+        "messageCount": 2
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "determine_intent",
+      "label": "Buying or Selling",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Determine if they are buying or selling",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["intent"],
+        "validationRules": {
+          "intent": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "assess_property_needs",
+      "label": "Property Requirements",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "critical",
+      "purpose": "Understand property requirements",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["determine_intent"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["propertyType", "budget", "location", "bedrooms", "bathrooms"],
+        "validationRules": {
+          "propertyType": { "required": true },
+          "budget": { "required": true },
+          "location": { "required": true },
+          "bedrooms": { "required": false },
+          "bathrooms": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "assess_timeline",
+      "label": "Timeline",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "high",
+      "purpose": "Understand their timeline and urgency",
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["assess_property_needs"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["timeline", "preApproved"],
+        "validationRules": {
+          "timeline": { "required": true },
+          "preApproved": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 5,
+      "priority": "critical",
+      "purpose": "Get contact information",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["assess_timeline"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" },
+          "phone": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "property_inquiry"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_showing",
+      "label": "Schedule Showing",
+      "type": "scheduling",
+      "order": 6,
+      "priority": "high",
+      "purpose": "Schedule property showing or consultation",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "messageCount": 7
+      },
+      "dataToCapture": {
+        "fields": ["preferredDate", "preferredTime"],
+        "validationRules": {
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.showing_requested",
+            "payload": {
+              "appointmentType": "property_showing",
+              "duration": 60
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+SAAS / TECHNOLOGY INDUSTRY
+================================================================================
+
+{
+  "label": "SaaS / Technology",
+  "description": "For software companies, SaaS products, and tech services",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "high",
+      "purpose": "Get user's name",
+      "adherence": 5,
+      "triggers": {
+        "messageCount": 2
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "assess_use_case",
+      "label": "Use Case",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Understand what they want to accomplish",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["useCase", "currentSolution", "teamSize"],
+        "validationRules": {
+          "useCase": { "required": true },
+          "currentSolution": { "required": false },
+          "teamSize": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "identify_pain_points",
+      "label": "Pain Points",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "high",
+      "purpose": "Understand their challenges and frustrations",
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["assess_use_case"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["painPoints", "mustHaveFeatures"],
+        "validationRules": {
+          "painPoints": { "required": true },
+          "mustHaveFeatures": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "qualify_budget",
+      "label": "Budget & Timeline",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "high",
+      "purpose": "Determine budget and timeline",
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["identify_pain_points"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["budget", "timeline", "decisionMaker"],
+        "validationRules": {
+          "budget": { "required": false },
+          "timeline": { "required": true },
+          "decisionMaker": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 5,
+      "priority": "critical",
+      "purpose": "Get contact information",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["qualify_budget"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone", "companyName"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" },
+          "phone": { "required": false },
+          "companyName": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "product_inquiry"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_demo",
+      "label": "Schedule Demo",
+      "type": "scheduling",
+      "order": 6,
+      "priority": "high",
+      "purpose": "Book product demo",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "messageCount": 7
+      },
+      "dataToCapture": {
+        "fields": ["preferredDate", "preferredTime"],
+        "validationRules": {
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.demo_requested",
+            "payload": {
+              "appointmentType": "product_demo",
+              "duration": 30
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+AUTOMOTIVE DEALERSHIP INDUSTRY
+================================================================================
+
+{
+  "label": "Automotive Dealership",
+  "description": "For car dealerships, auto sales, and vehicle services",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "high",
+      "purpose": "Get customer's name",
+      "adherence": 6,
+      "triggers": {
+        "messageCount": 2
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "determine_intent",
+      "label": "Buy, Lease, or Service",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Determine if buying, leasing, or servicing",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["intent"],
+        "validationRules": {
+          "intent": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "assess_vehicle_preferences",
+      "label": "Vehicle Preferences",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "critical",
+      "purpose": "Understand vehicle type and features wanted",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["determine_intent"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["vehicleType", "budget", "mustHaveFeatures", "tradeIn"],
+        "validationRules": {
+          "vehicleType": { "required": true },
+          "budget": { "required": true },
+          "mustHaveFeatures": { "required": false },
+          "tradeIn": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "assess_timeline",
+      "label": "Purchase Timeline",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "high",
+      "purpose": "Understand when they plan to buy",
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["assess_vehicle_preferences"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["timeline", "financing"],
+        "validationRules": {
+          "timeline": { "required": true },
+          "financing": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 5,
+      "priority": "critical",
+      "purpose": "Get contact information",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["assess_timeline"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" },
+          "phone": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "vehicle_inquiry"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_test_drive",
+      "label": "Schedule Test Drive",
+      "type": "scheduling",
+      "order": 6,
+      "priority": "high",
+      "purpose": "Book test drive appointment",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "messageCount": 7
+      },
+      "dataToCapture": {
+        "fields": ["preferredDate", "preferredTime"],
+        "validationRules": {
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.test_drive_requested",
+            "payload": {
+              "appointmentType": "test_drive",
+              "duration": 45
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+HEALTHCARE / MEDICAL INDUSTRY
+================================================================================
+
+{
+  "label": "Healthcare / Medical",
+  "description": "For medical practices, clinics, and healthcare providers",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "high",
+      "purpose": "Get patient's name",
+      "adherence": 7,
+      "triggers": {
+        "messageCount": 2
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "assess_concern",
+      "label": "Medical Concern",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Understand their medical concern or reason for visit",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["chiefComplaint", "symptoms", "duration"],
+        "validationRules": {
+          "chiefComplaint": { "required": true },
+          "symptoms": { "required": false },
+          "duration": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "determine_urgency",
+      "label": "Urgency Level",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "critical",
+      "purpose": "Assess urgency to route appropriately",
+      "adherence": 9,
+      "triggers": {
+        "afterGoals": ["assess_concern"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["urgency", "preferredAppointmentType"],
+        "validationRules": {
+          "urgency": { "required": true },
+          "preferredAppointmentType": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "collect_patient_info",
+      "label": "Patient Information",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "high",
+      "purpose": "Collect basic patient information",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["determine_urgency"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["dateOfBirth", "insuranceProvider", "existingPatient"],
+        "validationRules": {
+          "dateOfBirth": { "required": true },
+          "insuranceProvider": { "required": false },
+          "existingPatient": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 5,
+      "priority": "critical",
+      "purpose": "Get contact information",
+      "adherence": 9,
+      "triggers": {
+        "afterGoals": ["collect_patient_info"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" },
+          "phone": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "patient_inquiry"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_appointment",
+      "label": "Schedule Appointment",
+      "type": "scheduling",
+      "order": 6,
+      "priority": "critical",
+      "purpose": "Book medical appointment",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "messageCount": 7
+      },
+      "dataToCapture": {
+        "fields": ["preferredDate", "preferredTime"],
+        "validationRules": {
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.medical_requested",
+            "payload": {
+              "appointmentType": "medical_consultation",
+              "duration": 30
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+LEGAL SERVICES INDUSTRY
+================================================================================
+
+{
+  "label": "Legal Services",
+  "description": "For law firms, attorneys, and legal consultants",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "high",
+      "purpose": "Get client's name",
+      "adherence": 7,
+      "triggers": {
+        "messageCount": 2
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "determine_legal_matter",
+      "label": "Type of Legal Matter",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Understand the type of legal issue",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["legalMatterType", "briefDescription"],
+        "validationRules": {
+          "legalMatterType": { "required": true },
+          "briefDescription": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "assess_urgency",
+      "label": "Urgency & Timeline",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "high",
+      "purpose": "Determine urgency and any deadlines",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["determine_legal_matter"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["urgency", "deadlines", "opposingParty"],
+        "validationRules": {
+          "urgency": { "required": true },
+          "deadlines": { "required": false },
+          "opposingParty": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "assess_budget",
+      "label": "Budget Expectations",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "medium",
+      "purpose": "Understand budget and fee structure preference",
+      "adherence": 5,
+      "triggers": {
+        "afterGoals": ["assess_urgency"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["budgetRange", "feePreference"],
+        "validationRules": {
+          "budgetRange": { "required": false },
+          "feePreference": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 5,
+      "priority": "critical",
+      "purpose": "Get contact information",
+      "adherence": 9,
+      "triggers": {
+        "afterGoals": ["assess_budget"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" },
+          "phone": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "legal_inquiry"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_consultation",
+      "label": "Schedule Consultation",
+      "type": "scheduling",
+      "order": 6,
+      "priority": "high",
+      "purpose": "Book legal consultation",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "messageCount": 7
+      },
+      "dataToCapture": {
+        "fields": ["preferredDate", "preferredTime"],
+        "validationRules": {
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.legal_consultation_requested",
+            "payload": {
+              "appointmentType": "legal_consultation",
+              "duration": 60
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+RESTAURANT / HOSPITALITY INDUSTRY
+================================================================================
+
+{
+  "label": "Restaurant / Hospitality",
+  "description": "For restaurants, cafes, bars, and food service",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "medium",
+      "purpose": "Get customer's name",
+      "adherence": 5,
+      "triggers": {
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "determine_intent",
+      "label": "Reservation or Inquiry",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Determine if making reservation or general inquiry",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["intent"],
+        "validationRules": {
+          "intent": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "reservation_details",
+      "label": "Reservation Details",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "critical",
+      "purpose": "Get party size, date, and time for reservation",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["determine_intent"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["partySize", "preferredDate", "preferredTime", "specialRequests"],
+        "validationRules": {
+          "partySize": { "required": true },
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true },
+          "specialRequests": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "critical",
+      "purpose": "Get contact information for confirmation",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["reservation_details"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone"],
+        "validationRules": {
+          "email": { "required": false },
+          "phone": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "reservation.requested",
+            "payload": {
+              "appointmentType": "dining_reservation"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+E-COMMERCE INDUSTRY
+================================================================================
+
+{
+  "label": "E-Commerce",
+  "description": "For online stores and e-commerce businesses",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "medium",
+      "purpose": "Get shopper's name",
+      "adherence": 4,
+      "triggers": {
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["firstName"],
+        "validationRules": {
+          "firstName": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "assess_shopping_intent",
+      "label": "Shopping Intent",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "high",
+      "purpose": "Understand what they're looking for",
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["productCategory", "budget", "specificNeeds"],
+        "validationRules": {
+          "productCategory": { "required": true },
+          "budget": { "required": false },
+          "specificNeeds": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "offer_assistance",
+      "label": "Product Recommendations",
+      "type": "conversation",
+      "order": 3,
+      "priority": "medium",
+      "purpose": "Provide product recommendations",
+      "adherence": 5,
+      "triggers": {
+        "afterGoals": ["assess_shopping_intent"],
+        "messageCount": 5
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_email_for_offers",
+      "label": "Email for Offers",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "high",
+      "purpose": "Collect email for promotions and cart recovery",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["offer_assistance"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "shopping_inquiry"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+CONSULTING / PROFESSIONAL SERVICES INDUSTRY
+================================================================================
+
+{
+  "label": "Consulting / Professional Services",
+  "description": "For consultants, agencies, and professional service providers",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "high",
+      "purpose": "Get prospect's name",
+      "adherence": 6,
+      "triggers": {
+        "messageCount": 2
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName", "companyName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": false },
+          "companyName": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "assess_business_challenge",
+      "label": "Business Challenge",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Understand the business problem they're trying to solve",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["businessChallenge", "currentSituation", "desiredOutcome"],
+        "validationRules": {
+          "businessChallenge": { "required": true },
+          "currentSituation": { "required": false },
+          "desiredOutcome": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "assess_company_info",
+      "label": "Company Information",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "high",
+      "purpose": "Understand company size and industry",
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["assess_business_challenge"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["industry", "companySize", "revenue"],
+        "validationRules": {
+          "industry": { "required": true },
+          "companySize": { "required": false },
+          "revenue": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "qualify_project",
+      "label": "Project Qualification",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "high",
+      "purpose": "Assess budget, timeline, and decision-making authority",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["assess_company_info"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["budget", "timeline", "decisionMaker", "stakeholders"],
+        "validationRules": {
+          "budget": { "required": false },
+          "timeline": { "required": true },
+          "decisionMaker": { "required": false },
+          "stakeholders": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 5,
+      "priority": "critical",
+      "purpose": "Get contact information",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["qualify_project"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" },
+          "phone": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "consulting_inquiry"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_discovery_call",
+      "label": "Schedule Discovery Call",
+      "type": "scheduling",
+      "order": 6,
+      "priority": "high",
+      "purpose": "Book discovery or strategy call",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "messageCount": 7
+      },
+      "dataToCapture": {
+        "fields": ["preferredDate", "preferredTime"],
+        "validationRules": {
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.discovery_call_requested",
+            "payload": {
+              "appointmentType": "discovery_call",
+              "duration": 45
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+EDUCATION / TRAINING INDUSTRY
+================================================================================
+
+{
+  "label": "Education / Training",
+  "description": "For schools, training programs, courses, and educational services",
+  "goals": [
+    {
+      "id": "collect_identity",
+      "label": "Get Name",
+      "type": "data_collection",
+      "order": 1,
+      "priority": "high",
+      "purpose": "Get student/parent name",
+      "adherence": 6,
+      "triggers": {
+        "messageCount": 2
+      },
+      "dataToCapture": {
+        "fields": ["firstName", "lastName"],
+        "validationRules": {
+          "firstName": { "required": true },
+          "lastName": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "determine_program_interest",
+      "label": "Program Interest",
+      "type": "data_collection",
+      "order": 2,
+      "priority": "critical",
+      "purpose": "Understand which program or course they're interested in",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_identity"],
+        "messageCount": 3
+      },
+      "dataToCapture": {
+        "fields": ["programOfInterest", "learningGoals"],
+        "validationRules": {
+          "programOfInterest": { "required": true },
+          "learningGoals": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "persistent"
+      }
+    },
+    {
+      "id": "assess_background",
+      "label": "Background & Experience",
+      "type": "data_collection",
+      "order": 3,
+      "priority": "high",
+      "purpose": "Understand current knowledge level and experience",
+      "adherence": 6,
+      "triggers": {
+        "afterGoals": ["determine_program_interest"],
+        "messageCount": 4
+      },
+      "dataToCapture": {
+        "fields": ["currentLevel", "priorExperience", "ageGroup"],
+        "validationRules": {
+          "currentLevel": { "required": true },
+          "priorExperience": { "required": false },
+          "ageGroup": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "assess_preferences",
+      "label": "Learning Preferences",
+      "type": "data_collection",
+      "order": 4,
+      "priority": "medium",
+      "purpose": "Understand schedule and format preferences",
+      "adherence": 5,
+      "triggers": {
+        "afterGoals": ["assess_background"],
+        "messageCount": 5
+      },
+      "dataToCapture": {
+        "fields": ["preferredFormat", "availability", "startDate"],
+        "validationRules": {
+          "preferredFormat": { "required": false },
+          "availability": { "required": false },
+          "startDate": { "required": false }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 2,
+        "backoffStrategy": "gentle"
+      }
+    },
+    {
+      "id": "collect_contact_info",
+      "label": "Contact Info",
+      "type": "data_collection",
+      "order": 5,
+      "priority": "critical",
+      "purpose": "Get contact information",
+      "adherence": 8,
+      "triggers": {
+        "afterGoals": ["assess_preferences"],
+        "messageCount": 6
+      },
+      "dataToCapture": {
+        "fields": ["email", "phone"],
+        "validationRules": {
+          "email": { "required": true, "pattern": "^[^@]+@[^@]+\\.[^@]+$" },
+          "phone": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 5,
+        "backoffStrategy": "persistent"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "convert_anonymous_to_lead",
+            "eventName": "lead.contact_captured",
+            "payload": {
+              "source": "chat_agent",
+              "leadType": "enrollment_inquiry"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_tour_or_info_session",
+      "label": "Schedule Visit",
+      "type": "scheduling",
+      "order": 6,
+      "priority": "high",
+      "purpose": "Book campus tour or info session",
+      "adherence": 7,
+      "triggers": {
+        "afterGoals": ["collect_contact_info"],
+        "messageCount": 7
+      },
+      "dataToCapture": {
+        "fields": ["preferredDate", "preferredTime"],
+        "validationRules": {
+          "preferredDate": { "required": true },
+          "preferredTime": { "required": true }
+        }
+      },
+      "behavior": {
+        "maxAttempts": 3,
+        "backoffStrategy": "gentle"
+      },
+      "actions": {
+        "onComplete": [
+          {
+            "type": "trigger_scheduling_flow",
+            "eventName": "appointment.tour_requested",
+            "payload": {
+              "appointmentType": "campus_tour",
+              "duration": 60
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+================================================================================
+END OF TEMPLATES
+================================================================================
+
+

@@ -250,13 +250,14 @@ export declare const MessageItemSchema: z.ZodObject<{
     GSI2PK: z.ZodOptional<z.ZodString>;
     GSI2SK: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
+    text: string;
     contact_pk: string;
     ts: string;
     tenantId: string;
     email_lc: string;
     source: "sms" | "email" | "chat" | "api" | "agent";
     direction: "inbound" | "outbound";
-    text: string;
+    conversation_id?: string | undefined;
     lead_id?: string | undefined;
     channel_context?: {
         sms?: {
@@ -278,23 +279,23 @@ export declare const MessageItemSchema: z.ZodObject<{
             connectionId?: string | undefined;
         } | undefined;
     } | undefined;
-    attachments?: string[] | undefined;
     meta?: Record<string, any> | undefined;
-    conversation_id?: string | undefined;
-    targetKey?: string | undefined;
-    dateReceived?: string | undefined;
     GSI1PK?: string | undefined;
     GSI1SK?: string | undefined;
     GSI2PK?: string | undefined;
     GSI2SK?: string | undefined;
+    attachments?: string[] | undefined;
+    targetKey?: string | undefined;
+    dateReceived?: string | undefined;
 }, {
+    text: string;
     contact_pk: string;
     ts: string;
     tenantId: string;
     email_lc: string;
     source: "sms" | "email" | "chat" | "api" | "agent";
     direction: "inbound" | "outbound";
-    text: string;
+    conversation_id?: string | undefined;
     lead_id?: string | undefined;
     channel_context?: {
         sms?: {
@@ -316,15 +317,14 @@ export declare const MessageItemSchema: z.ZodObject<{
             connectionId?: string | undefined;
         } | undefined;
     } | undefined;
-    attachments?: string[] | undefined;
     meta?: Record<string, any> | undefined;
-    conversation_id?: string | undefined;
-    targetKey?: string | undefined;
-    dateReceived?: string | undefined;
     GSI1PK?: string | undefined;
     GSI1SK?: string | undefined;
     GSI2PK?: string | undefined;
     GSI2SK?: string | undefined;
+    attachments?: string[] | undefined;
+    targetKey?: string | undefined;
+    dateReceived?: string | undefined;
 }>;
 export type MessageItem = z.infer<typeof MessageItemSchema>;
 export declare const LeadItemSchema: z.ZodObject<{
@@ -341,16 +341,16 @@ export declare const LeadItemSchema: z.ZodObject<{
     lead_id: string;
     PK: string;
     SK: string;
-    phone_e164?: string | undefined;
     preferences?: Record<string, any> | undefined;
+    phone_e164?: string | undefined;
 }, {
     email: string;
     email_lc: string;
     lead_id: string;
     PK: string;
     SK: string;
-    phone_e164?: string | undefined;
     preferences?: Record<string, any> | undefined;
+    phone_e164?: string | undefined;
 }>;
 export type LeadItem = z.infer<typeof LeadItemSchema>;
 export declare const InboundMessageEventSchema: z.ZodObject<{
@@ -464,14 +464,15 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
             } | undefined;
         }>>;
     }, "strip", z.ZodTypeAny, {
+        text: string;
         tenantId: string;
         source: "sms" | "email" | "chat" | "api" | "agent";
-        text: string;
         timestamps: {
             received: string;
             processed?: string | undefined;
         };
         email_lc?: string | undefined;
+        conversation_id?: string | undefined;
         lead_id?: string | undefined;
         channel_context?: {
             sms?: {
@@ -493,18 +494,18 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 connectionId?: string | undefined;
             } | undefined;
         } | undefined;
-        conversation_id?: string | undefined;
         phone_e164?: string | undefined;
         provider?: Record<string, any> | undefined;
     }, {
+        text: string;
         tenantId: string;
         source: "sms" | "email" | "chat" | "api" | "agent";
-        text: string;
         timestamps: {
             received: string;
             processed?: string | undefined;
         };
         email_lc?: string | undefined;
+        conversation_id?: string | undefined;
         lead_id?: string | undefined;
         channel_context?: {
             sms?: {
@@ -526,7 +527,6 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 connectionId?: string | undefined;
             } | undefined;
         } | undefined;
-        conversation_id?: string | undefined;
         phone_e164?: string | undefined;
         provider?: Record<string, any> | undefined;
     }>;
@@ -534,14 +534,15 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
     source: "kxgen.messaging";
     'detail-type': "lead.message.created";
     detail: {
+        text: string;
         tenantId: string;
         source: "sms" | "email" | "chat" | "api" | "agent";
-        text: string;
         timestamps: {
             received: string;
             processed?: string | undefined;
         };
         email_lc?: string | undefined;
+        conversation_id?: string | undefined;
         lead_id?: string | undefined;
         channel_context?: {
             sms?: {
@@ -563,7 +564,6 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 connectionId?: string | undefined;
             } | undefined;
         } | undefined;
-        conversation_id?: string | undefined;
         phone_e164?: string | undefined;
         provider?: Record<string, any> | undefined;
     };
@@ -571,14 +571,15 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
     source: "kxgen.messaging";
     'detail-type': "lead.message.created";
     detail: {
+        text: string;
         tenantId: string;
         source: "sms" | "email" | "chat" | "api" | "agent";
-        text: string;
         timestamps: {
             received: string;
             processed?: string | undefined;
         };
         email_lc?: string | undefined;
+        conversation_id?: string | undefined;
         lead_id?: string | undefined;
         channel_context?: {
             sms?: {
@@ -600,7 +601,6 @@ export declare const InboundMessageEventSchema: z.ZodObject<{
                 connectionId?: string | undefined;
             } | undefined;
         } | undefined;
-        conversation_id?: string | undefined;
         phone_e164?: string | undefined;
         provider?: Record<string, any> | undefined;
     };
@@ -659,9 +659,9 @@ export declare const AgentReplyEventSchema: z.ZodObject<{
         conversation_id: z.ZodOptional<z.ZodString>;
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
     }, "strip", z.ZodTypeAny, {
+        text: string;
         contact_pk: string;
         tenantId: string;
-        text: string;
         preferredChannel: "sms" | "email" | "chat" | "api" | "agent";
         routing: {
             sms?: {
@@ -677,9 +677,9 @@ export declare const AgentReplyEventSchema: z.ZodObject<{
         conversation_id?: string | undefined;
         metadata?: Record<string, any> | undefined;
     }, {
+        text: string;
         contact_pk: string;
         tenantId: string;
-        text: string;
         preferredChannel: "sms" | "email" | "chat" | "api" | "agent";
         routing: {
             sms?: {
@@ -699,9 +699,9 @@ export declare const AgentReplyEventSchema: z.ZodObject<{
     source: "kxgen.agent";
     'detail-type': "agent.reply.created";
     detail: {
+        text: string;
         contact_pk: string;
         tenantId: string;
-        text: string;
         preferredChannel: "sms" | "email" | "chat" | "api" | "agent";
         routing: {
             sms?: {
@@ -721,9 +721,9 @@ export declare const AgentReplyEventSchema: z.ZodObject<{
     source: "kxgen.agent";
     'detail-type': "agent.reply.created";
     detail: {
+        text: string;
         contact_pk: string;
         tenantId: string;
-        text: string;
         preferredChannel: "sms" | "email" | "chat" | "api" | "agent";
         routing: {
             sms?: {
@@ -888,3 +888,4 @@ export interface AgentResponse {
         details?: any;
     };
 }
+export type { ChannelWorkflowState, ChannelItem } from "./dynamodb-schemas.js";

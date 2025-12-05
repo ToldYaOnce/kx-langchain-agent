@@ -2,8 +2,11 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as readline from 'readline';
+import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { AgentService } from '@toldyaonce/kx-langchain-agent-runtime';
 import { createChatConfig, type ChatOptions } from './chat.js';
+import { LocalSessionStore } from '../lib/local-session-store.js';
+import { LocalChannelStateService } from '../lib/local-channel-state-service.js';
 
 interface SimpleChatOptions extends ChatOptions {
   session?: string;
@@ -11,15 +14,48 @@ interface SimpleChatOptions extends ChatOptions {
 
 export async function simpleChatCommand(options: SimpleChatOptions) {
   try {
-    console.log(chalk.blue('🤖 KxGen LangChain Agent - Simple Chat'));
+    console.log(chalk.blue('🤖 KxGen LangChain Agent - Simple Chat (with local persistence)'));
     console.log(chalk.gray(`Tenant: ${options.tenantId}`));
     console.log(chalk.gray(`Email: ${options.email}`));
     console.log(chalk.gray(`Persona: ${options.persona || 'carlos'}`));
     console.log(chalk.gray(`Session: ${options.session || 'default'}`));
 
     const config = createChatConfig(options);
-    const agentService = new AgentService(config);
     const emailLc = options.email.toLowerCase();
+    
+    // Initialize local session store (for LOCAL DEV ONLY)
+    const sessionStore = new LocalSessionStore();
+    const sessionId = `${options.tenantId}-${emailLc}-${options.session || 'default'}`;
+    
+    // Clear session on startup (fresh start each time you run dev:chat)
+    sessionStore.clearSession(sessionId);
+    console.log(chalk.cyan(`🔄 Starting fresh local session (local dev mode)`));
+    
+    // Create local channel state service
+    const localChannelStateService = new LocalChannelStateService(sessionStore, sessionId);
+    
+    // Inject local channel state service into config
+    (config as any).channelStateService = localChannelStateService;
+    
+    const agentService = new AgentService(config);
+
+    // Start logging to file
+    sessionStore.startLogging(sessionId);
+    console.log(chalk.gray(`📝 Logging to: ${sessionStore.getLogFilePath()}`));
+
+    // Intercept console.log to also write to log file (LOCAL DEV ONLY)
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...args) => {
+      originalLog(...args);
+      const message = args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)).join(' ') + '\n';
+      sessionStore.appendLog(message);
+    };
+    console.error = (...args) => {
+      originalError(...args);
+      const message = '[ERROR] ' + args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg, null, 2)).join(' ') + '\n';
+      sessionStore.appendLog(message);
+    };
 
     console.log(chalk.green('✅ Agent initialized successfully'));
     
@@ -30,7 +66,7 @@ export async function simpleChatCommand(options: SimpleChatOptions) {
       
       const personaService = new PersonaService(null);
       const persona = await personaService.getPersona(options.tenantId, options.persona || 'carlos', config.companyInfo);
-      const greeting = GreetingService.generateGreeting(persona.greetings, config.companyInfo);
+      const greeting = GreetingService.generateGreeting((persona.greetings || persona.greetingConfig) as any, config.companyInfo);
       
       console.log(chalk.green('🤖 ' + persona.name + ':'), greeting);
     } catch (error) {
@@ -51,7 +87,8 @@ export async function simpleChatCommand(options: SimpleChatOptions) {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: chalk.cyan('You: ')
+      prompt: chalk.cyan('You: '),
+      terminal: true
     });
 
     // Handle process cleanup for watch mode
@@ -84,33 +121,58 @@ export async function simpleChatCommand(options: SimpleChatOptions) {
       }
 
       if (trimmedMessage.toLowerCase() === 'clear') {
-        console.log(chalk.green('🧹 Chat history cleared\\n'));
+        sessionStore.clearSession(sessionId);
+        console.log(chalk.green('🧹 Chat history and workflow state cleared\\n'));
         rl.prompt();
         return;
       }
+
+      // Save user message to local session
+      sessionStore.addMessage(sessionId, new HumanMessage(trimmedMessage));
 
       // Process message with agent
       const spinner = ora('🤔 Agent is thinking...').start();
 
       try {
-        const response = await agentService.processMessage({
-          tenantId: options.tenantId,
-          email_lc: emailLc,
-          text: trimmedMessage,
-          source: options.source || 'chat',
-          conversation_id: options.session || 'default',
-          channel_context: {
-            chat: {
-              sessionId: options.session || 'default',
-              clientId: 'cli',
+        // Load previous messages for context
+        const previousMessages = sessionStore.getMessages(sessionId);
+        
+        const result = await agentService.processMessage(
+          {
+            tenantId: options.tenantId,
+            email_lc: emailLc,
+            text: trimmedMessage,
+            source: options.source || 'chat',
+            conversation_id: options.session || 'default',
+            channel_context: {
+              chat: {
+                sessionId: options.session || 'default',
+                clientId: 'cli',
+              },
             },
           },
-        });
+          previousMessages  // Pass message history
+        );
 
         spinner.stop();
 
+        // Extract response and follow-up (processMessage returns an object)
+        const response = typeof result === 'string' ? result : result.response;
+        const followUp = typeof result === 'object' && result.followUpQuestion ? result.followUpQuestion : undefined;
+
+        // Save agent response to local session
+        sessionStore.addMessage(sessionId, new AIMessage(response));
+
         // Display the response
         console.log(chalk.green('🤖 Agent:'), response);
+
+        // Display follow-up question if present (with a slight delay for UX)
+        if (followUp) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+          console.log(chalk.yellow('💬 Follow-up:'), followUp);
+          // Also save follow-up to session for context
+          sessionStore.addMessage(sessionId, new AIMessage(followUp));
+        }
 
       } catch (error) {
         spinner.stop();
@@ -126,7 +188,11 @@ export async function simpleChatCommand(options: SimpleChatOptions) {
     });
 
     rl.on('close', () => {
+      // Restore original console
+      console.log = originalLog;
+      console.error = originalError;
       console.log(chalk.blue('\\n👋 Goodbye!'));
+      console.log(chalk.gray(`📝 Session log saved to: ${sessionStore.getLogFilePath()}`));
       process.exit(0);
     });
 

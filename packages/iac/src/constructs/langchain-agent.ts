@@ -54,6 +54,8 @@ export interface LangchainAgentProps {
     messagesTableName: string;
     leadsTableName: string;
     personasTableName?: string;
+    channelsTableName?: string;
+    workflowStateTableName?: string;
   };
 }
 
@@ -78,19 +80,37 @@ export class LangchainAgent extends Construct {
     let messagesTableName: string;
     let leadsTableName: string;
     let personasTableName: string;
+    let channelsTableName: string;
+    let workflowStateTableName: string;
 
     if (props.existingTables) {
       // Use existing tables
       messagesTableName = props.existingTables.messagesTableName;
       leadsTableName = props.existingTables.leadsTableName;
       personasTableName = props.existingTables.personasTableName || 'kxgen-personas';
+      channelsTableName = props.existingTables.channelsTableName || 'KxGen-channels-v2';
+      
+      // If workflowStateTableName is NOT provided, create it (agent-owned table)
+      if (props.existingTables.workflowStateTableName) {
+        workflowStateTableName = props.existingTables.workflowStateTableName;
+      } else {
+        // Create ONLY the workflow state table (agent-owned)
+        this.dynamoDBTables = new DynamoDBTables(this, 'Tables', {
+          ...props.dynamoDBTablesProps,
+          // Only create workflow state table by not providing other table names
+        });
+        workflowStateTableName = this.dynamoDBTables.workflowStateTable.tableName;
+      }
     } else {
-      // Create new tables
+      // Create new tables (except channels - owned by kx-notifications-and-messaging)
       this.dynamoDBTables = new DynamoDBTables(this, 'Tables', props.dynamoDBTablesProps);
       const tableNames = this.dynamoDBTables.getTableNames();
       messagesTableName = tableNames.messages;
       leadsTableName = tableNames.leads;
       personasTableName = tableNames.personas;
+      workflowStateTableName = tableNames.workflowState;
+      // Channels table must be provided via existingTables
+      channelsTableName = 'KxGen-channels-v2'; // Default to kx-notifications-and-messaging table
     }
     
     // Common environment variables
@@ -98,6 +118,8 @@ export class LangchainAgent extends Construct {
       MESSAGES_TABLE: messagesTableName,
       LEADS_TABLE: leadsTableName,
       PERSONAS_TABLE: personasTableName,
+      CHANNELS_TABLE: channelsTableName, // Read-only: for botEmployeeIds and message tracking
+      WORKFLOW_STATE_TABLE: workflowStateTableName, // Agent-owned: for workflow state management
       BEDROCK_MODEL_ID: props.bedrockModelId,
       OUTBOUND_EVENT_BUS_NAME: eventBus.eventBusName,
       OUTBOUND_EVENT_BUS_ARN: eventBus.eventBusArn,
@@ -198,6 +220,9 @@ export class LangchainAgent extends Construct {
           `arn:aws:dynamodb:*:*:table/${leadsTableName}/index/*`,
           `arn:aws:dynamodb:*:*:table/${personasTableName}`,
           `arn:aws:dynamodb:*:*:table/${personasTableName}/index/*`,
+          `arn:aws:dynamodb:*:*:table/${workflowStateTableName}`,
+          `arn:aws:dynamodb:*:*:table/${workflowStateTableName}/index/*`,
+          `arn:aws:dynamodb:*:*:table/${channelsTableName}`, // Read-only access
         ];
 
     this.setupIamPermissions(props, eventBus, tableArns);
@@ -289,16 +314,17 @@ export class LangchainAgent extends Construct {
    * Setup EventBridge rules to trigger Lambda functions
    */
   private setupEventBridgeRules(eventBus: events.IEventBus): void {
-    // Rule for inbound messages (transformed format)
-    new events.Rule(this, 'InboundMessageRule', {
-      eventBus,
-      description: 'Route inbound lead messages to agent router',
-      eventPattern: {
-        source: ['kxgen.messaging'],
-        detailType: ['lead.message.created'],
-      },
-      targets: [new targets.LambdaFunction(this.agentRouterFunction)],
-    });
+    // 🚫 DISABLED: Transformer pattern causes duplicate invocations
+    // The fanout pattern (chat.message.available) already routes messages to the agent
+    // new events.Rule(this, 'InboundMessageRule', {
+    //   eventBus,
+    //   description: 'Route inbound lead messages to agent router',
+    //   eventPattern: {
+    //     source: ['kxgen.messaging'],
+    //     detailType: ['lead.message.created'],
+    //   },
+    //   targets: [new targets.LambdaFunction(this.agentRouterFunction)],
+    // });
 
     // // Rule for direct chat messages (for testing/compatibility)
     // new events.Rule(this, 'ChatMessageRule', {
@@ -319,12 +345,13 @@ export class LangchainAgent extends Construct {
     // });
 
     // Rule for chat.message.available from kx-notifications-messaging
+    // ONLY route events where userId is NOT the senderId (i.e., the message is FOR a bot, not FROM a human to themselves)
     new events.Rule(this, 'ChatMessageAvailableRule', {
       eventBus,
-      description: 'Route chat.message.available events to agent router',
+      description: 'Route chat.message.available events to agent router (bot participants only)',
       eventPattern: {
         source: ['kx-notifications-messaging'],
-        detailType: ['chat.message.available']
+        detailType: ['chat.message.available'],
       },
       targets: [new targets.LambdaFunction(this.agentRouterFunction)],
     });

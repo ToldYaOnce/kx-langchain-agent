@@ -134,6 +134,10 @@ coverage/
 .env.test.local
 .env.production.local
 
+# Local CLI session files (dev only)
+.local-sessions/
+packages/cli/.local-sessions/
+
 # NPM package lock files (using workspaces)
 package-lock.json
 

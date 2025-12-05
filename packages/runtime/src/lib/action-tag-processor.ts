@@ -31,6 +31,11 @@ export class ActionTagProcessor {
       return text;
     }
 
+    // Safety check: ensure mappings exists
+    if (!this.config.mappings) {
+      return text;
+    }
+
     // Find all action tags in the format [tag]
     const actionTagRegex = /\[([a-zA-Z_]+)\]/g;
     

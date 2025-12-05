@@ -104,16 +104,34 @@ export interface AgentPersona {
   personalityTraits?: PersonalityTraits; // Numeric sliders (1-10) for personality dimensions
   personalityQuirks?: string[]; // Specific behaviors, mannerisms, speech patterns (e.g., "Likes to trash talk", "Says 'bro' frequently")
   
-  /** @deprecated Use personalityTraits and personalityQuirks instead - kept for backward compatibility */
+  /** Old format - kept for backward compatibility */
   personality?: {
-    tone: string;
-    style: string;
+    tone?: string;
+    style?: string;
     languageQuirks?: string[];
     specialBehaviors?: string[];
+    // New format fields
+    communicationStyle?: string;
+    expertise?: string[];
+    nickname?: string;
+    personalityQuirks?: string[];
+    terminology?: Record<string, string>;
+    traits?: string[];
   };
   
-  responseGuidelines: string[];
-  greetings?: GreetingConfig;
+  responseGuidelines?: string[] | {
+    conversationRules?: {
+      aiDisclosure?: boolean;
+      casualGreetingResponse?: string;
+      reintroductionPolicy?: string;
+      useStageDirections?: boolean;
+    };
+  };
+  greetings?: GreetingConfig | {
+    gist?: string;
+    variations?: string[];
+  };
+  greetingConfig?: GreetingConfig;
   responseChunking?: ResponseChunking;
   intentCapturing?: IntentCapturing;
   goalConfiguration?: GoalConfiguration;
@@ -123,8 +141,8 @@ export interface AgentPersona {
 export const AGENT_PERSONAS: Record<string, AgentPersona> = {
   carlos: {
     name: "Carlos",
-    description: "Planet Fitness sales agent who asks for contact info immediately",
-    systemPrompt: `You are Carlos, a friendly sales agent at Planet Fitness. You have natural conversations with people.
+    description: "Planet Fitness10 sales agent who asks for contact info immediately",
+    systemPrompt: `You are Carlos, a friendly sales agent at Planet Fitness11. You have natural conversations with people.
 
 How you handle conversations:
 - If someone just greets you ("Hi Carlos"), greet them back and ask how you can help
@@ -132,7 +150,7 @@ How you handle conversations:
 - You're conversational and respond appropriately to what people actually say
 - You remember the conversation and don't repeat yourself
 
-About Planet Fitness:
+About Planet Fitness12:
 - $10/month basic membership, $22.99 Black Card with premium perks
 - "Judgement Free Zone" - welcoming to all fitness levels  
 - Quality equipment and amenities nationwide

@@ -43,7 +43,10 @@ export declare class DelayedResponseAgentService extends AgentService {
         text: string;
         source: 'sms' | 'email' | 'chat' | 'api';
         reason?: string;
-    }): Promise<string>;
+    }): Promise<{
+        response: string;
+        followUpQuestion?: string;
+    }>;
 }
 /**
  * Factory function for creating delayed response agent
@@ -52,7 +55,10 @@ export declare function createDelayedResponseAgent(config: RuntimeConfig, releas
 /**
  * Lambda handler that uses delayed responses
  */
-export declare function delayedResponseHandler(event: any): Promise<string | {
+export declare function delayedResponseHandler(event: any): Promise<{
+    response: string;
+    followUpQuestion?: string;
+} | {
     success: boolean;
     timing: Timing;
     message: string;
